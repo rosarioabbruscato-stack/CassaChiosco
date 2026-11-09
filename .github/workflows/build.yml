@@ -1,7 +1,7 @@
 name: Build APK with Buildozer
 on:
   push:
-    branches: [ main, master ]
+    branches: [ principale, main, master ]
 jobs:
   build:
     runs-on: ubuntu-latest
