@@ -21,16 +21,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config \
-            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
+            zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev
+          
+          wget -q http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb
+          sudo dpkg -i libtinfo5_6.3-2ubuntu0.1_amd64.deb
+          rm libtinfo5_6.3-2ubuntu0.1_amd64.deb
 
       - name: Install Buildozer and Cython
         run: |
+          export PATH=$PATH:~/.local/bin
           pip3 install --upgrade pip
           pip3 install --user Cython==0.29.36 buildozer
 
       - name: Build with Buildozer
         run: |
-          export PATH=\$PATH:~/.local/bin
+          export PATH=$PATH:~/.local/bin
           buildozer -v android debug
 
       - name: Upload APK
