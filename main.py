@@ -1,7 +1,9 @@
 import sys
 import os
 
-# Aggiunge la sottocartella al path di Python
+from kivy.core.window import Window
+Window.show_cursor = True
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'cassa-chiosco')))
 
 from kivy.app import App

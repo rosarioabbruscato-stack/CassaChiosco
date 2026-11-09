@@ -594,6 +594,21 @@ class InterfacciaMagazzino(BoxLayout):
         except Exception as e:
             self.mostra_popup('Errore', str(e))
 
+    def mostra_popup(self, titolo, messaggio):
+        from kivy.uix.popup import Popup
+        from kivy.uix.boxlayout import BoxLayout
+        from kivy.uix.label import Label
+        from kivy.uix.button import Button
+        
+        content = BoxLayout(orientation='vertical', padding=15, spacing=15)
+        content.add_widget(Label(text=messaggio, halign='center', valign='middle'))
+        btn = Button(text='OK', size_hint=(None, None), size=(100, 40), pos_hint={'center_x': 0.5})
+        content.add_widget(btn)
+        
+        popup = Popup(title=titolo, content=content, size_hint=(0.6, 0.4))
+        btn.bind(on_release=popup.dismiss)
+        popup.open()
+
     def esporta_dati(self, instance):
         try:
             ids_selezionati = [pid for pid, chk in self.checkboxes_prodotti.items() if chk.active]
