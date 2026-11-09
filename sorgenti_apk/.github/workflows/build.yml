@@ -1,0 +1,19 @@
+name: Build APK with Buildozer
+on:
+  push:
+    branches: [ main, master ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with Buildozer
+        uses: ArtemSBulgakov/buildozer-action@v1
+        with:
+          command: buildozer -v android debug
+          commit_destroy: true
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pacchetto-apk
+          path: bin/*.apk
