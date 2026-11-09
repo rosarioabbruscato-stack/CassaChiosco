@@ -20,18 +20,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config \
+            git zip unzip openjdk-17-jdk autoconf libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
 
       - name: Install Buildozer and Cython
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install Cython==0.29.36 buildozer
+          python3.10 -m pip install --upgrade pip
+          python3.10 -m pip install Cython==0.29.36 buildozer
 
       - name: Build with Buildozer
         run: |
           export PATH=$PATH:~/.local/bin
-          buildozer -v android debug
+          python3.10 -m buildozer -v android debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
