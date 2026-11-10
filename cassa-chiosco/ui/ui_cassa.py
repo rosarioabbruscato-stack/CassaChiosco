@@ -52,7 +52,7 @@ class InterfacciaCassa(BoxLayout):
         left_box = BoxLayout(orientation='vertical', padding=[20, 10, 20, 10], spacing=10, size_hint_x=0.48)
 
         scroll_scontrino = ScrollView()
-        app_instance.scontrino_label = Label(text="Scontrino Vuoto", font_name="Roboto", font_size='13sp', halign='left', valign='top', size_hint_y=None, color=(0.2, 0.2, 0.2, 1))
+        app_instance.scontrino_label = Label(markup=True, text="Scontrino Vuoto", font_name="Roboto", font_size='18sp', halign='left', valign='top', size_hint_y=None, color=(0.2, 0.2, 0.2, 1))
         def update_text_size(instance, width):
             if width > 0 and instance.text_size[0] != width:
                 instance.text_size = (width, None)
@@ -299,7 +299,7 @@ class InterfacciaCassa(BoxLayout):
                 self.lbl_resto.text = f"Resto: CHF {resto:.2f}"
             else:
                 self.lbl_resto.text = "Resto: Importo insufficiente"
-        print(f"DEBUG: Importo ricevuto={importo_ricevuto}, Totale={totale_complessivo}, Resto={resto}")
+        print(f"DEBUG: Importo ricevuto={importo_ricevuto}, Totale={totale_complessivo}, Resto=[b]{resto}[/b]")
 
 
     def check_stato(self):
@@ -329,7 +329,7 @@ class InterfacciaCassa(BoxLayout):
                 self.buffer_input += "."
         else:
             self.buffer_input += val_str
-        print(f"DEBUG tastierino: buffer_input = {self.buffer_input}")
+        print(f"DEBUG tastierino: buffer_input = [b]{self.buffer_input}[/b]")
 
     def aggiorna_resto(self, instance, value):
         self.check_stato()
@@ -346,7 +346,7 @@ class InterfacciaCassa(BoxLayout):
                 self.lbl_resto.text = f"Resto: CHF {resto:.2f}"
             else:
                 self.lbl_resto.text = "Resto: Importo insufficiente"
-        print(f"DEBUG: Importo ricevuto={importo_ricevuto}, Totale={totale_complessivo}, Resto={resto}")
+        print(f"DEBUG: Importo ricevuto={importo_ricevuto}, Totale={totale_complessivo}, Resto=[b]{resto}[/b]")
 
 
     def check_stato(self):
@@ -376,7 +376,7 @@ class InterfacciaCassa(BoxLayout):
                 self.buffer_input += "."
         else:
             self.buffer_input += val_str
-        print(f"DEBUG tastierino: buffer_input = {self.buffer_input}")
+        print(f"DEBUG tastierino: buffer_input = [b]{self.buffer_input}[/b]")
 
     def imposta_modalita(self, modo):
         self.check_stato()
@@ -430,7 +430,7 @@ class InterfacciaCassa(BoxLayout):
                 self.lbl_resto.text = f"Resto: CHF {resto:.2f}"
             else:
                 self.lbl_resto.text = "Resto: Importo insufficiente"
-        print(f"DEBUG: Importo ricevuto={importo_ricevuto}, Totale={totale_complessivo}, Resto={resto}")
+        print(f"DEBUG: Importo ricevuto={importo_ricevuto}, Totale={totale_complessivo}, Resto=[b]{resto}[/b]")
 
 
     def aggiorna_griglia_scontrino(self):
@@ -444,7 +444,7 @@ class InterfacciaCassa(BoxLayout):
                     qta = art.get('qta', 1.0)
                     prz = art.get('prezzo', 0.0)
                     tot_riga = art.get('totale_riga', qta * prz)
-                    linee.append(f"• {art['reparto']} ({qta:g} x {prz:.2f}) = {tot_riga:.2f}")
+                    linee.append(f"• {art['reparto']} ({qta:g} x {prz:.2f}) = [b]{tot_riga:.2f}[/b]")
                 self.scontrino_label.text = "\n".join(linee)
                 
             if hasattr(self, 'lbl_totale') and self.lbl_totale:
