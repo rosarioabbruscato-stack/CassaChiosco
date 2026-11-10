@@ -40,34 +40,75 @@ def esporta_magazzino_excel(file_path="export_magazzino.xlsx"):
         return False, str(e)
 
 
+
+
 def importa_magazzino_excel(file_path=None):
-    """Importa i prodotti da un file Excel nel database SQLite usando openpyxl."""
-    if not file_path:
-        files_xlsx = glob.glob("*.xlsx")
-        if files_xlsx:
-            file_path = files_xlsx[0]
-        else:
-            return False, "Nessun file Excel trovato nella cartella."
-
+    import sqlite3, os, pandas as pd
     try:
-        wb = openpyxl.load_workbook(file_path)
-        ws = wb.active
-
-        conn = sqlite3.connect(DB_PATH)
+        if not file_path:
+            file_path = os.path.abspath("dati_excel/export_magazzino.xlsx")
+        
+        if not os.path.exists(file_path):
+            return False, f"File non trovato: {file_path}"
+            
+        df = pd.read_excel(file_path) if file_path.endswith((".xlsx", ".xls")) else pd.read_csv(file_path)
+        
+        db_path = os.path.abspath("cassa.db")
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if any(row):
-                # Adatta i campi in base alla struttura della tua tabella prodotti
-                cursor.execute("""
-                    INSERT OR REPLACE INTO prodotti (id, codice_barra, nome, prezzo, giacenza)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (row[0], row[1], row[2], row[3], row[4]))
-
+        
+        # Creiamo la tabella prodotti se non esiste
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS prodotti (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                barcode TEXT,
+                nome TEXT,
+                prezzo REAL,
+                giacenza REAL,
+                categoria TEXT
+            )
+        ''')
+        
+        # Verifichiamo le colonne reali della tabella SQLite
+        cursor.execute("PRAGMA table_info(prodotti)")
+        colonne_db = [col[1] for col in cursor.fetchall()]
+        
+        # Inseriamo riga per riga mappando in modo flessibile
+        righe_caricate = 0
+        for _, row in df.iterrows():
+            # Troviamo i valori mappando le colonne del DataFrame
+            barcode_val = str(row.get("Barcode", row.get("codice_barra", row.get("Codice", ""))))
+            nome_val = str(row.get("Nome", row.get("Prodotto", row.get("Articolo", ""))))
+            
+            try:
+                prezzo_val = float(row.get("Prezzo", row.get("Prezzo Vendita", 0.0)))
+            except:
+                prezzo_val = 0.0
+                
+            try:
+                giacenza_val = float(row.get("Giacenza", row.get("Quantita", 0)))
+            except:
+                giacenza_val = 0.0
+                
+            categoria_val = str(row.get("Categoria", ""))
+            
+            # Inserimento dinamico in base alle colonne effettive presenti nel DB
+            if "codice_barra" in colonne_db and "barcode" in colonne_db:
+                cursor.execute("INSERT INTO prodotti (barcode, codice_barra, nome, prezzo, giacenza, categoria) VALUES (?, ?, ?, ?, ?, ?)",
+                               (barcode_val, barcode_val, nome_val, prezzo_val, giacenza_val, categoria_val))
+            elif "codice_barra" in colonne_db:
+                cursor.execute("INSERT INTO prodotti (codice_barra, nome, prezzo, giacenza, categoria) VALUES (?, ?, ?, ?, ?)",
+                               (barcode_val, nome_val, prezzo_val, giacenza_val, categoria_val))
+            elif "barcode" in colonne_db:
+                cursor.execute("INSERT INTO prodotti (barcode, nome, prezzo, giacenza, categoria) VALUES (?, ?, ?, ?, ?)",
+                               (barcode_val, nome_val, prezzo_val, giacenza_val, categoria_val))
+            else:
+                cursor.execute("INSERT INTO prodotti (nome, prezzo, giacenza, categoria) VALUES (?, ?, ?, ?)",
+                               (nome_val, prezzo_val, giacenza_val, categoria_val))
+            righe_caricate += 1
+            
         conn.commit()
         conn.close()
-        return True, "Importazione completata con successo!"
+        return True, f"Importazione completata con successo! Righe caricate: {righe_caricate}"
     except Exception as e:
         return False, str(e)
-
-

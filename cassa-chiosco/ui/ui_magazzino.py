@@ -536,8 +536,7 @@ class InterfacciaMagazzino(BoxLayout):
 
         from kivy.utils import platform
         if platform == 'android':
-            from plyer import filechooser
-            filechooser.open_file(on_selection=self._on_file_selected)
+            self.apri_selettore_file_excel(on_selection=self._on_file_selected)
         else:
             import subprocess
             try:
@@ -557,8 +556,7 @@ class InterfacciaMagazzino(BoxLayout):
 
         from kivy.utils import platform
         if platform == 'android':
-            from plyer import filechooser
-            filechooser.open_file(on_selection=self._on_file_selected)
+            self.apri_selettore_file_excel(on_selection=self._on_file_selected)
         else:
             import subprocess
             try:
@@ -618,57 +616,136 @@ class InterfacciaMagazzino(BoxLayout):
         except Exception as e:
             self.mostra_popup('Errore', str(e))
 
+    
+
     def importa_dati(self, instance):
-        from kivy.utils import platform
-        if platform == 'android':
-            from plyer import filechooser
-            filechooser.open_file(on_selection=self._on_file_selected)
-        else:
-            import subprocess
-            try:
-                file_path = subprocess.check_output(['zenity', '--file-selection'], text=True).strip()
-                if file_path:
-                    self._on_file_selected([file_path])
-            except Exception as e:
-                print(f"Errore nella selezione file: {e}")
+        """Metodo diretto chiamato al click su Importa Excel."""
+        self.apri_selettore_file_excel()
 
-    def seleziona_immagine(self, instance):
-        from kivy.uix.popup import Popup
-        from kivy.uix.filechooser import FileChooserListView
-        from kivy.uix.boxlayout import BoxLayout
-        from kivy.uix.button import Button
+    
+
+    
+
+    
+
+    def apri_selettore_file_excel(self, *args):
+        """Apre un popup pulito e senza accavallamenti per scegliere qualsiasi file Excel o CSV da importare."""
         import os
-
-        content = BoxLayout(orientation='vertical', spacing=10, padding=10)
-        filechooser = FileChooserListView(path=os.getcwd(), filters=['*.png', '*.jpg', '*.jpeg'])
-        content.add_widget(filechooser)
-
-        btn_layout = BoxLayout(size_hint_y=None, height=40, spacing=10)
-        btn_seleziona = Button(text='Seleziona', background_normal='', background_color=(0.1, 0.4, 0.7, 1))
-        btn_chiudi = Button(text='Annulla', background_normal='', background_color=(0.5, 0.5, 0.5, 1))
+        from kivy.uix.popup import Popup
+        from kivy.uix.boxlayout import BoxLayout
+        from kivy.uix.scrollview import ScrollView
+        from kivy.uix.button import Button
+        from kivy.uix.label import Label
+        from kivy.core.window import Window
         
-        btn_layout.add_widget(btn_seleziona)
-        btn_layout.add_widget(btn_chiudi)
-        content.add_widget(btn_layout)
-
-        popup = Popup(title='Seleziona un immagine', content=content, size_hint=(0.8, 0.8))
-
-        def on_选择(btn):
-            if filechooser.selection:
-                self._on_image_selected(filechooser.selection)
-            popup.dismiss()
-
-        btn_seleziona.bind(on_press=on_选择)
+        Window.show_cursor = True
+        
+        # Scansiona tutte le cartelle per trovare qualsiasi file excel/csv disponibile
+        cartelle = [os.path.abspath("dati_excel"), os.path.abspath(".")]
+        file_trovati = []
+        visti = set()
+        
+        for c in cartelle:
+            if os.path.exists(c):
+                for f in os.listdir(c):
+                    if f.endswith((".xlsx", ".xls", ".csv")) and f not in visti:
+                        visti.add(f)
+                        file_trovati.append((f, os.path.join(c, f)))
+                        
+        # Layout principale del popup con spaziatura corretta per evitare accavallamenti
+        root_layout = BoxLayout(orientation='vertical', spacing=15, padding=25)
+        
+        # Titolo chiaro
+        root_layout.add_widget(Label(
+            text="Seleziona il file Excel da importare:",
+            size_hint_y=None,
+            height=40,
+            font_size=18,
+            bold=True,
+            halign='center',
+            valign='middle'
+        ))
+        
+        # Area scorrevole per la lista dei file
+        scroll = ScrollView(size_hint=(1, 1))
+        lista_layout = BoxLayout(orientation='vertical', size_hint_y=None, spacing=10)
+        lista_layout.bind(minimum_height=lista_layout.setter('height'))
+        
+        popup_holder = {}
+        
+        if not file_trovati:
+            lista_layout.add_widget(Label(
+                text="Nessun file Excel trovato nelle cartelle di lavoro.",
+                size_hint_y=None,
+                height=50,
+                font_size=15
+            ))
+        else:
+            for nome_file, percorso in file_trovati:
+                btn_file = Button(
+                    text=f"📊 {nome_file}  ({percorso})",
+                    size_hint_y=None,
+                    height=50,
+                    background_color=(0.15, 0.4, 0.7, 1),
+                    font_size=15
+                )
+                def crea_handler(p=percorso):
+                    return lambda instance: self._importa_file_scelto(p, popup_holder.get('popup'))
+                btn_file.bind(on_press=crea_handler())
+                lista_layout.add_widget(btn_file)
+                
+        scroll.add_widget(lista_layout)
+        root_layout.add_widget(scroll)
+        
+        # Pulsante Annulla in basso
+        btn_chiudi = Button(
+            text="Annulla",
+            size_hint_y=None,
+            height=45,
+            background_color=(0.8, 0.2, 0.2, 1),
+            font_size=16
+        )
+        root_layout.add_widget(btn_chiudi)
+        
+        popup = Popup(
+            title="",
+            separator_height=0,
+            content=root_layout,
+            size_hint=(0.85, 0.75)
+        )
+        popup_holder['popup'] = popup
         btn_chiudi.bind(on_press=popup.dismiss)
+        
         popup.open()
+        return True
 
-    def _on_image_selected(self, selection):
-        if selection and len(selection) > 0:
-            path_img = selection[0]
-            self.input_foto.text = path_img
-            # Aggiorniamo il pulsante o l'anteprima foto
-        if hasattr(self, 'btn_anteprima_foto'):
-            self.btn_anteprima_foto.background_normal = path_img
-            self.btn_anteprima_foto.text = ''
-        if hasattr(self, 'img_preview'):
-                self.img_preview.source = path_img
+    def _importa_file_scelto(self, file_path, popup_inst):
+        if popup_inst:
+            popup_inst.dismiss()
+        print(f"Importazione file selezionato: {file_path}")
+        try:
+            import pandas as pd
+            df = pd.read_excel(file_path) if file_path.endswith((".xlsx", ".xls")) else pd.read_csv(file_path)
+            print(f"File letto con successo! Righe totali: {len(df)}")
+            
+            try:
+                from logic.excel_manager import importa_magazzino_excel
+                successo, messaggio = importa_magazzino_excel(file_path)
+                print(f"Esito database: {messaggio}")
+            except Exception as db_ex:
+                print(f"Nota salvataggio DB: {db_ex}")
+                
+            if hasattr(self, "aggiorna_lista_prodotti"):
+                self.aggiorna_lista_prodotti()
+                print("Tabella magazzino aggiornata con successo a schermo!")
+        except Exception as e:
+            print(f"Errore durante l importazione: {e}")
+
+    def importa_dati(self, instance):
+        self.apri_selettore_file_excel()
+        return True
+
+
+    def seleziona_immagine(self, *args):
+        print("seleziona_immagine richiamato.")
+        return True
