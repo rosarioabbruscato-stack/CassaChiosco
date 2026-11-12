@@ -2,7 +2,11 @@ from kivy.uix.button import Button
 from kivy.graphics import Color, Rectangle
 from kivy.core.window import Window
 
-Window.clearcolor = (0.95, 0.95, 0.97, 1)
+from kivy.core.window import Window
+if Window:
+    from kivy.core.window import Window
+if Window:
+    Window.clearcolor = (0.95, 0.95, 0.97, 1)
 
 COLORI_REPARTI = {
     "ALIMENTARI": (1.0, 0.6, 0.15, 1),

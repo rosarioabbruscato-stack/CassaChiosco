@@ -1,114 +1,76 @@
-import sqlite3
-import openpyxl
-import glob
+# -*- coding: utf-8 -*-
 import os
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 
-DB_PATH = "database/magazzino.db" if os.path.exists("database/magazzino.db") else "magazzino.db"
+def esporta_magazzino_excel(articoli, filepath):
+    if pd is not None and filepath.endswith((".xlsx", ".xls")):
+        pd.DataFrame(articoli).to_excel(filepath, index=False)
+    else:
+        import csv
+        with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(["Nome", "Barcode", "Categoria", "Lotto", "Scadenza", "Prezzo", "Giacenza", "POS", "Colore"])
+            for a in articoli:
+                w.writerow([
+                    a.get("nome", ""),
+                    a.get("barcode", ""),
+                    a.get("cat", ""),
+                    a.get("lotto", ""),
+                    a.get("scad", ""),
+                    a.get("prezzo", 0.0),
+                    a.get("giac", 0.0),
+                    a.get("pos", ""),
+                    a.get("colore", "")
+                ])
 
-def esporta_magazzino_excel(file_path="export_magazzino.xlsx"):
-    """Esporta i prodotti dal database SQLite a un file Excel usando openpyxl."""
-    try:
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Magazzino"
-
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT * FROM prodotti")
-        rows = cursor.fetchall()
-        
-        column_names = [description[0] for description in cursor.description]
-        
-        # Verifica le colonne esistenti nella tabella prodotti
-        cursor.execute("PRAGMA table_info(prodotti)")
-        colonne = [col[1] for col in cursor.fetchall()]
-        
-        # Se la tabella esiste ma manca codice_barra, la aggiungiamo
-        if colonne and 'codice_barra' not in colonne:
-            cursor.execute("ALTER TABLE prodotti ADD COLUMN codice_barra TEXT")
-            conn.commit()
-        conn.close()
-
-        ws.append(column_names)
-        for row in rows:
-            ws.append(row)
-
-        wb.save(file_path)
-        return True, "Esportazione completata con successo!"
-    except Exception as e:
-        return False, str(e)
-
-
-
-
-def importa_magazzino_excel(file_path=None):
-    import sqlite3, os, pandas as pd
-    try:
-        if not file_path:
-            file_path = os.path.abspath("dati_excel/export_magazzino.xlsx")
-        
-        if not os.path.exists(file_path):
-            return False, f"File non trovato: {file_path}"
-            
-        df = pd.read_excel(file_path) if file_path.endswith((".xlsx", ".xls")) else pd.read_csv(file_path)
-        
-        db_path = os.path.abspath("cassa.db")
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # Creiamo la tabella prodotti se non esiste
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS prodotti (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                barcode TEXT,
-                nome TEXT,
-                prezzo REAL,
-                giacenza REAL,
-                categoria TEXT
-            )
-        ''')
-        
-        # Verifichiamo le colonne reali della tabella SQLite
-        cursor.execute("PRAGMA table_info(prodotti)")
-        colonne_db = [col[1] for col in cursor.fetchall()]
-        
-        # Inseriamo riga per riga mappando in modo flessibile
-        righe_caricate = 0
+def importa_magazzino_excel(filepath):
+    articoli = []
+    if not os.path.exists(filepath):
+        return articoli
+    if filepath.endswith((".xlsx", ".xls")) and pd is not None:
+        xls = pd.ExcelFile(filepath)
+        df = pd.read_excel(xls, xls.sheet_names[0])
         for _, row in df.iterrows():
-            # Troviamo i valori mappando le colonne del DataFrame
-            barcode_val = str(row.get("Barcode", row.get("codice_barra", row.get("Codice", ""))))
-            nome_val = str(row.get("Nome", row.get("Prodotto", row.get("Articolo", ""))))
+            nome = str(row.get("Nome", row.get("nome", "Senza Nome")))
+            barcode_val = str(row.get("Barcode", row.get("codice_barra", row.get("Codice", row.get("barcode", "")))))
+            if barcode_val == "nan": barcode_val = ""
+            prezzo = float(row.get("Prezzo di vendita", row.get("prezzo", 0.0)) or 0.0)
+            giac = float(row.get("Quantità giacenza fisica", row.get("giac", 0.0)) or 0.0)
+            cat = str(row.get("Etichette", row.get("cat", "N/D")))
+            if cat == "nan": cat = "N/D"
             
-            try:
-                prezzo_val = float(row.get("Prezzo", row.get("Prezzo Vendita", 0.0)))
-            except:
-                prezzo_val = 0.0
-                
-            try:
-                giacenza_val = float(row.get("Giacenza", row.get("Quantita", 0)))
-            except:
-                giacenza_val = 0.0
-                
-            categoria_val = str(row.get("Categoria", ""))
-            
-            # Inserimento dinamico in base alle colonne effettive presenti nel DB
-            if "codice_barra" in colonne_db and "barcode" in colonne_db:
-                cursor.execute("INSERT INTO prodotti (barcode, codice_barra, nome, prezzo, giacenza, categoria) VALUES (?, ?, ?, ?, ?, ?)",
-                               (barcode_val, barcode_val, nome_val, prezzo_val, giacenza_val, categoria_val))
-            elif "codice_barra" in colonne_db:
-                cursor.execute("INSERT INTO prodotti (codice_barra, nome, prezzo, giacenza, categoria) VALUES (?, ?, ?, ?, ?)",
-                               (barcode_val, nome_val, prezzo_val, giacenza_val, categoria_val))
-            elif "barcode" in colonne_db:
-                cursor.execute("INSERT INTO prodotti (barcode, nome, prezzo, giacenza, categoria) VALUES (?, ?, ?, ?, ?)",
-                               (barcode_val, nome_val, prezzo_val, giacenza_val, categoria_val))
-            else:
-                cursor.execute("INSERT INTO prodotti (nome, prezzo, giacenza, categoria) VALUES (?, ?, ?, ?)",
-                               (nome_val, prezzo_val, giacenza_val, categoria_val))
-            righe_caricate += 1
-            
-        conn.commit()
-        conn.close()
-        return True, f"Importazione completata con successo! Righe caricate: {righe_caricate}"
-    except Exception as e:
-        return False, str(e)
+            articoli.append({
+                "nome": nome,
+                "barcode": barcode_val,
+                "cat": cat,
+                "lotto": "N/D",
+                "scad": "",
+                "prezzo": prezzo,
+                "giac": giac,
+                "pos": "",
+                "colore": "#333333",
+                "selezionato": False
+            })
+    else:
+        import csv
+        with open(filepath, "r", encoding="utf-8-sig") as f:
+            reader = csv.reader(f, delimiter=";")
+            next(reader, None)
+            for row in reader:
+                if len(row) >= 7:
+                    articoli.append({
+                        "nome": row[0],
+                        "barcode": row[1],
+                        "cat": row[2],
+                        "lotto": row[3],
+                        "scad": row[4],
+                        "prezzo": float(row[5] or 0.0),
+                        "giac": float(row[6] or 0.0),
+                        "pos": row[7] if len(row) > 7 else "",
+                        "colore": row[8] if len(row) > 8 else "#333333",
+                        "selezionato": False
+                    })
+    return articoli

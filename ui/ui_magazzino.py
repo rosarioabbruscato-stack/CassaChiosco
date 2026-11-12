@@ -1,736 +1,572 @@
-import os
-from kivy.metrics import dp
+# -*- coding: utf-8 -*-
+import os, json, csv
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+from kivy.uix.screenmanager import Screen
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
-from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
-from kivy.uix.checkbox import CheckBox
-from kivy.uix.spinner import Spinner
+from kivy.uix.scrollview import ScrollView
 from kivy.uix.popup import Popup
-import sqlite3
-from database.db_manager import DB_PATH
-from logic.excel_manager import esporta_magazzino_excel, importa_magazzino_excel
+from kivy.uix.filechooser import FileChooserListView
+from kivy.uix.image import Image as KivyImage
+from kivy.graphics import Color, Rectangle
+from kivy.app import App
 
-class InterfacciaMagazzino(BoxLayout):
+DB_FILE = "magazzino_data.json"
+
+def importa_magazzino_excel(filepath):
+    import pandas as pd
+    import openpyxl
+    articoli_caricati = []
+    
+    os.makedirs("assets/images", exist_ok=True)
+    
+    # Tentiamo di estrarre immagini incorporate con openpyxl
+    image_map = {}
+    try:
+        wb = openpyxl.load_workbook(filepath, data_only=True)
+        sheet = wb.active
+        if hasattr(sheet, "_images") and sheet._images:
+            for img in sheet._images:
+                row_idx = getattr(img.anchor._from, "row", None)
+                if row_idx is not None:
+                    # row_idx in openpyxl is 0-indexed (row 1 is index 0, ma l intestazione è row 0 / index 1)
+                    # salviamo l immagine su disco
+                    img_filename = f"assets/images/img_row_{row_idx}.png"
+                    with open(img_filename, "wb") as img_file:
+                        img_file.write(img._data())
+                    image_map[row_idx + 1] = img_filename # 1-based row index matching pandas df.iterrows() + 2
+    except Exception as ex:
+        print("Nota estrazione immagini excel:", ex)
+
+    try:
+        df = pd.read_excel(filepath)
+        for df_idx, row in df.iterrows():
+            nome = str(row.get("Nome", "Senza Nome"))
+            if pd.isna(nome) or nome.strip() == "": nome = "Senza Nome"
+            
+            bc = row.get("Codice a barre", "")
+            if pd.notna(bc):
+                if str(bc).replace(".","").isdigit():
+                    barcode = str(int(float(bc)))
+                else:
+                    barcode = str(bc).strip()
+            else:
+                barcode = ""
+            
+            cat = row.get("Magazzino", row.get("Etichette", "Generale"))
+            if pd.isna(cat) or str(cat).strip() == "": cat = "Generale"
+            else: cat = str(cat).strip()
+                
+            lotto = row.get("Riferimento interno", "N/D")
+            if pd.isna(lotto) or str(lotto).strip() == "": lotto = "N/D"
+            else: lotto = str(lotto).strip()
+                
+            scad = row.get("Data di scadenza", "")
+            if pd.notna(scad):
+                scad_str = str(scad).strip()
+                scad = scad_str[:10] if len(scad_str) >= 10 else ""
+            else:
+                scad = ""
+                
+            try:
+                prezzo = float(row.get("Prezzo di vendita", 0.0))
+            except:
+                prezzo = 0.0
+                
+            try:
+                giac = float(row.get("Quantità giacenza fisica", 0.0))
+            except:
+                giac = 0.0
+                
+            # Percorso foto: controlliamo se specificato in cella o estratto dal foglio
+            foto = row.get("Foto", "")
+            foto_str = str(foto).strip() if pd.notna(foto) else ""
+            
+            # Se non c è nel testo ma c è nell mapping openpyxl delle righe excel (df_idx + 2 corrisponde alla riga excel reale)
+            excel_row_num = df_idx + 2
+            if not foto_str and excel_row_num in image_map:
+                foto_str = image_map[excel_row_num]
+
+            art = {
+                "nome": nome,
+                "barcode": barcode,
+                "cat": cat,
+                "lotto": lotto,
+                "scad": scad,
+                "prezzo": prezzo,
+                "giac": giac,
+                "pos": "Reparto 1",
+                "colore": "#333333",
+                "foto": foto_str,
+                "selezionato": False
+            }
+            articoli_caricati.append(art)
+    except Exception as e:
+        print("Errore importazione excel:", e)
+    return articoli_caricati
+
+class FileChooserPopup(Popup):
+    def __init__(self, callback, mode="open", **kwargs):
+        super(FileChooserPopup, self).__init__(**kwargs)
+        self.callback = callback
+        self.mode = mode
+        self.title = "Seleziona file Excel/CSV da Importare" if mode == "open" else "Scegli dove Esportare il file"
+        self.size_hint = (0.85, 0.85)
+        layout = BoxLayout(orientation="vertical", spacing=10, padding=10)
+        start_path = "/mnt/c/Users/utente/Desktop" if os.path.exists("/mnt/c/Users/utente/Desktop") else os.path.expanduser("~")
+        self.fc = FileChooserListView(filters=["*.xlsx", "*.xls", "*.csv"], path=start_path)
+        layout.add_widget(self.fc)
+        btn_layout = BoxLayout(size_hint_y=None, height=45, spacing=10)
+        btn_ok = Button(text="Seleziona", background_normal="", background_color=(0.1, 0.6, 0.3, 1), bold=True)
+        btn_ok.bind(on_press=self.conferma)
+        btn_cancel = Button(text="Annulla", background_normal="", background_color=(0.8, 0.2, 0.2, 1), bold=True)
+        btn_cancel.bind(on_press=self.dismiss)
+        btn_layout.add_widget(btn_ok)
+        btn_layout.add_widget(btn_cancel)
+        layout.add_widget(btn_layout)
+        self.content = layout
+
+    def conferma(self, *args):
+        selection = self.fc.selection
+        if selection:
+            self.callback(selection[0])
+            self.dismiss()
+        elif self.mode == "save" and self.fc.path:
+            self.callback(os.path.join(self.fc.path, "magazzino_export.csv"))
+            self.dismiss()
+
+class InterfacciaMagazzino(Screen):
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.orientation = 'vertical'
-        self.padding = dp(10)
-        self.spacing = dp(10)
-        self.prodotto_selezionato_id = None
-        self.checkboxes_prodotti = {}
-        self.modalita_vista = 'elenco'
-        self.criteri_raggruppamento_attivi = []
-
-        top_layout = BoxLayout(size_hint_y=None, height=45, spacing=10)
-        top_layout.add_widget(Label(text="Gestione Magazzino (Stile Odoo)", font_size=18, bold=True, color=(0.1, 0.1, 0.1, 1)))
+        super(InterfacciaMagazzino, self).__init__(**kwargs)
+        self.articoli = self.carica_dati()
+        self.articolo_selezionato_idx = None
+        self.vista_attuale = "elenco"
+        self.pagina_corrente = 0
+        self.elementi_per_pagina = 40
         
-        self.btn_vista_elenco = Button(text='Elenco', size_hint_x=None, width=95, background_color=(0.1, 0.4, 0.6, 1))
-        self.btn_vista_griglia = Button(text='Griglia', size_hint_x=None, width=95, background_color=(0.1, 0.4, 0.6, 1))
-        self.btn_esporta_excel = Button(text='Esporta', size_hint_x=None, width=95, background_color=(0.2, 0.6, 0.2, 1))
-        self.btn_vista_elenco.bind(on_press=lambda x: self.cambia_vista('elenco'))
-        top_layout.add_widget(self.btn_vista_elenco)
+        with self.canvas.before:
+            Color(0.92, 0.92, 0.92, 1)
+            self.bg_rect = Rectangle(size=self.size, pos=self.pos)
+        self.bind(size=self._update_bg, pos=self._update_bg)
 
-        self.btn_vista_griglia = Button(text="Vista Griglia", size_hint_x=None, width=110, background_color=(0.3, 0.3, 0.3, 1))
-        self.btn_vista_griglia.bind(on_press=lambda x: self.cambia_vista('griglia'))
-        top_layout.add_widget(self.btn_vista_griglia)
+        root = BoxLayout(orientation="vertical", spacing=0, padding=0, size_hint=(1, 1))
 
-        btn_export = Button(text="Esporta Excel", size_hint_x=None, width=110, background_color=(0.1, 0.6, 0.2, 1))
-        btn_export.bind(on_press=self.esporta_dati)
-        top_layout.add_widget(btn_export)
+        # 1. Tab superiori di navigazione
+        top_tabs = BoxLayout(size_hint_y=None, height=45, spacing=2)
+        btn_cassa = Button(text="Cassa / Vendita", background_normal="", background_color=(0.25, 0.25, 0.25, 1), bold=True)
+        btn_cassa.bind(on_press=lambda x: self.vai_a("cassa"))
+        btn_mag = Button(text="Magazzino", background_normal="", background_color=(0.15, 0.1, 0.4, 1), bold=True)
+        btn_st = Button(text="Chiusura & Storico", background_normal="", background_color=(0.25, 0.25, 0.25, 1), bold=True)
+        btn_st.bind(on_press=lambda x: self.vai_a("chiusura"))
+        top_tabs.add_widget(btn_cassa)
+        top_tabs.add_widget(btn_mag)
+        top_tabs.add_widget(btn_st)
+        root.add_widget(top_tabs)
 
-        btn_import = Button(text="Importa Excel", size_hint_x=None, width=110, background_color=(0.2, 0.4, 0.8, 1))
-        btn_import.bind(on_press=self.importa_dati)
-        top_layout.add_widget(btn_import)
+        # 2. Barra superiore azioni
+        odoo_bar = BoxLayout(size_hint_y=None, height=50, padding=8, spacing=10)
+        odoo_bar.add_widget(Label(text="Gestione Magazzino (Stile Odoo)", color=(0.1,0.1,0.1,1), bold=True, font_size=18, halign="left"))
         
-        self.add_widget(top_layout)
-
-        filter_layout = BoxLayout(size_hint_y=None, height=40, spacing=10)
-        self.input_ricerca = TextInput(text='', hint_text='Cerca per nome o codice...', multiline=False, size_hint_x=0.35)
-        self.input_ricerca.bind(text=lambda instance, value: self.aggiorna_lista_prodotti())
-        filter_layout.add_widget(self.input_ricerca)
-
-        self.btn_filtro_avanzato = Button(text='Raggruppa per...', size_hint_x=0.35, background_color=(0.2, 0.2, 0.2, 1))
-        self.btn_filtro_avanzato.bind(on_release=self.apri_popup_raggruppamento)
-        filter_layout.add_widget(self.btn_filtro_avanzato)
-
-        btn_sel_all = Button(text='Sel. Tutti', size_hint_x=0.15)
-        btn_sel_all.bind(on_press=self.seleziona_tutti)
-        filter_layout.add_widget(btn_sel_all)
-
-        btn_desel_all = Button(text='Deselez.', size_hint_x=0.15)
-        btn_desel_all.bind(on_press=self.deseleziona_tutti)
-        filter_layout.add_widget(btn_desel_all)
-
-        self.add_widget(filter_layout)
-
-        body_layout = BoxLayout(orientation='horizontal', spacing=15)
-
-        left_layout = BoxLayout(orientation='vertical', size_hint_x=0.5, spacing=5)
+        self.btn_elenco = Button(text="Elenco", size_hint_x=None, width=90, background_normal="", background_color=(0.1, 0.4, 0.6, 1), bold=True)
+        self.btn_elenco.bind(on_press=lambda x: self.cambia_vista("elenco"))
         
-        header_lista_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=30, spacing=5)
-        self.chk_master = CheckBox(size_hint_x=None, width=35, color=(0.1, 0.4, 0.8, 1))
-        self.chk_master.bind(active=self.toggle_seleziona_tutti_master)
-        header_lista_box.add_widget(self.chk_master)
-
-        self.label_titolo_lista = Label(text='Elenco Articoli (Tutti / Seleziona)', font_size=14, bold=True, color=(0.1, 0.1, 0.1, 1), halign='left')
-        self.label_titolo_lista.bind(size=lambda s, w: setattr(s, 'text_size', (s.width, s.height)))
-        header_lista_box.add_widget(self.label_titolo_lista)
+        self.btn_griglia = Button(text="Vista Griglia", size_hint_x=None, width=100, background_normal="", background_color=(0.2, 0.2, 0.2, 1), bold=True)
+        self.btn_griglia.bind(on_press=lambda x: self.cambia_vista("griglia"))
         
-        left_layout.add_widget(header_lista_box)
+        btn_esp = Button(text="Esporta Excel", size_hint_x=None, width=110, background_normal="", background_color=(0.1, 0.6, 0.3, 1), bold=True)
+        btn_esp.bind(on_press=lambda x: self.apri_selettore_salvataggio())
+        btn_imp = Button(text="Importa Excel", size_hint_x=None, width=110, background_normal="", background_color=(0.15, 0.4, 0.7, 1), bold=True)
+        btn_imp.bind(on_press=lambda x: self.apri_selettore_apertura())
+        btn_allerta = Button(text="⚠ Allerta", size_hint_x=None, width=90, background_normal="", background_color=(0.6, 0.1, 0.1, 1), bold=True)
+        btn_allerta.bind(on_press=self.filtra_scorte_basse)
         
-        self.scroll_lista = ScrollView()
-        self.layout_lista_prodotti = GridLayout(cols=1, spacing=2, size_hint_y=None)
-        self.layout_lista_prodotti.bind(minimum_height=self.layout_lista_prodotti.setter('height'))
-        self.scroll_lista.add_widget(self.layout_lista_prodotti)
-        left_layout.add_widget(self.scroll_lista)
+        odoo_bar.add_widget(self.btn_elenco)
+        odoo_bar.add_widget(self.btn_griglia)
+        odoo_bar.add_widget(btn_esp)
+        odoo_bar.add_widget(btn_imp)
+        odoo_bar.add_widget(btn_allerta)
+        root.add_widget(odoo_bar)
+
+        # 3. Barra filtri e selezione totale
+        filter_bar = BoxLayout(size_hint_y=None, height=45, padding=5, spacing=8)
+        self.txt_cerca = TextInput(hint_text="Cerca per nome o codice...", multiline=False, size_hint_x=0.45)
+        self.txt_cerca.bind(text=self.cerca_articoli)
+        btn_raggruppa = Button(text="Raggruppa per...", size_hint_x=0.2, background_normal="", background_color=(0.3, 0.3, 0.3, 1))
+        btn_sel = Button(text="Sel. Tutti", size_hint_x=0.175, background_normal="", background_color=(0.2, 0.5, 0.2, 1), bold=True)
+        btn_sel.bind(on_press=self.seleziona_tutti)
+        btn_des = Button(text="Deselez.", size_hint_x=0.175, background_normal="", background_color=(0.5, 0.2, 0.2, 1), bold=True)
+        btn_des.bind(on_press=self.deseleziona_tutti)
         
-        body_layout.add_widget(left_layout)
+        filter_bar.add_widget(self.txt_cerca)
+        filter_bar.add_widget(btn_raggruppa)
+        filter_bar.add_widget(btn_sel)
+        filter_bar.add_widget(btn_des)
+        root.add_widget(filter_bar)
 
-        right_main_layout = BoxLayout(orientation='vertical', size_hint_x=0.5, spacing=8, padding=10)
+        # 4. Area Principale
+        main_split = BoxLayout(orientation="horizontal", padding=8, spacing=12, size_hint=(1, 1))
 
-        header_odoo = BoxLayout(size_hint_y=None, height=135, spacing=10)
+        # Colonna Sinistra
+        left_layout = BoxLayout(orientation="vertical", spacing=5, size_hint_x=0.5)
         
-        fields_left_header = BoxLayout(orientation='vertical', spacing=6)
+        header_list_row = BoxLayout(size_hint_y=None, height=30, spacing=5)
+        self.btn_master_chk = Button(text="[   ]", size_hint_x=None, width=45, background_normal="", background_color=(0.85, 0.85, 0.85, 1), color=(0,0,0,1), bold=True)
+        self.btn_master_chk.bind(on_press=self.toggle_master_seleziona)
+        self.lbl_stato_lista = Label(text="Elenco Articoli Dettagliato (Paginato)", color=(0.1,0.1,0.1,1), bold=True, halign="left")
+        self.lbl_stato_lista.bind(size=self.lbl_stato_lista.setter("text_size"))
+        header_list_row.add_widget(self.btn_master_chk)
+        header_list_row.add_widget(self.lbl_stato_lista)
+        left_layout.add_widget(header_list_row)
         
-        name_box = BoxLayout(orientation='vertical', spacing=2)
-        name_box.add_widget(Label(text='Nome Prodotto:', font_size=12, size_hint_y=None, height=18, color=(0.1, 0.1, 0.1, 1), halign='left'))
-        self.input_nome = TextInput(text='', multiline=False, font_size=14)
-        name_box.add_widget(self.input_nome)
-        fields_left_header.add_widget(name_box)
+        self.scroll_list = ScrollView(size_hint_y=1)
+        self.list_content = BoxLayout(orientation="vertical", spacing=4, size_hint_y=None)
+        self.list_content.bind(minimum_height=self.list_content.setter("height"))
+        self.scroll_list.add_widget(self.list_content)
+        left_layout.add_widget(self.scroll_list)
 
-        barcode_box = BoxLayout(orientation='vertical', spacing=2)
-        barcode_box.add_widget(Label(text='Codice a barre (EAN):', font_size=12, size_hint_y=None, height=18, color=(0.1, 0.1, 0.1, 1), halign='left'))
-        self.input_barcode = TextInput(text='', multiline=False, font_size=13)
-        barcode_box.add_widget(self.input_barcode)
-        fields_left_header.add_widget(barcode_box)
-
-        header_odoo.add_widget(fields_left_header)
-
-        foto_box = BoxLayout(orientation='vertical', size_hint_x=None, width=130, spacing=2)
-        foto_box.add_widget(Label(text='Foto Prodotto', font_size=12, bold=True, size_hint_y=None, height=18, color=(0.1, 0.1, 0.1, 1)))
+        # Paginazione in basso a sinistra
+        page_bar = BoxLayout(size_hint_y=None, height=40, spacing=10)
+        btn_prev = Button(text="« Precedente", background_normal="", background_color=(0.3, 0.3, 0.3, 1), bold=True)
+        btn_prev.bind(on_press=self.pagina_precedente)
+        self.lbl_pagina = Label(text="Pagina 1", color=(0.1,0.1,0.1,1), bold=True)
+        btn_next = Button(text="Successivo »", background_normal="", background_color=(0.3, 0.3, 0.3, 1), bold=True)
+        btn_next.bind(on_press=self.pagina_successiva)
         
-        # Pulsante Scegli Immagine
-        # btn_rimosso = Button(text='Scegli Immagine...', size_hint_y=None, height=35, background_color=(0.1, 0.4, 0.7, 1))
-        # btn_rimosso.bind(on_press=self.seleziona_immagine)
-        # rimosso nome errato
+        page_bar.add_widget(btn_prev)
+        page_bar.add_widget(self.lbl_pagina)
+        page_bar.add_widget(btn_next)
+        left_layout.add_widget(page_bar)
 
-        self.input_foto = TextInput(text='', multiline=False, font_size=11, hint_text='Path immagine...', size_hint_y=None, height=30)
-        self.btn_anteprima_foto = Button(text='[ 📷 Quadrata\n130 x 130 ]', font_size=12, background_color=(0.88, 0.88, 0.90, 1), color=(0.2, 0.2, 0.2, 1))
-        self.btn_anteprima_foto.bind(on_press=self.seleziona_immagine)
+        main_split.add_widget(left_layout)
+
+        # Colonna Destra (Form Modifica)
+        right_layout = BoxLayout(orientation="vertical", spacing=8, size_hint_x=0.5, padding=5)
         
-        foto_box.add_widget(self.btn_anteprima_foto)
-        foto_box.add_widget(self.input_foto)
-        header_odoo.add_widget(foto_box)
-
-        right_main_layout.add_widget(header_odoo)
-
-        form_grid = GridLayout(cols=2, spacing=8, padding=5)
+        row_nome_foto = BoxLayout(size_hint_y=None, height=75, spacing=10)
+        box_campi_nome = BoxLayout(orientation="vertical", spacing=3)
+        box_campi_nome.add_widget(Label(text="Nome Prodotto:", color=(0.1,0.1,0.1,1), font_size=12, halign="left", size_hint_y=None, height=20))
+        self.txt_nome = TextInput(hint_text="Nome prodotto", multiline=False)
+        box_campi_nome.add_widget(self.txt_nome)
+        row_nome_foto.add_widget(box_campi_nome)
         
-        form_grid.add_widget(Label(text='Categoria:', color=(0.1, 0.1, 0.1, 1)))
-        self.spinner_categoria = Spinner(text='Seleziona o scrivi...', values=self.get_valori_colonna('categoria'))
-        form_grid.add_widget(self.spinner_categoria)
+        box_foto = BoxLayout(orientation="vertical", size_hint_x=None, width=120)
+        box_foto.add_widget(Label(text="Foto Prodotto", color=(0.1,0.1,0.1,1), font_size=11, size_hint_y=None, height=18))
+        self.btn_foto_form = Button(text="[□ Quadrata\n130 x 130]", background_normal="", background_color=(0.85, 0.85, 0.85, 1), color=(0.4,0.4,0.4,1), font_size=11)
+        box_foto.add_widget(self.btn_foto_form)
+        row_nome_foto.add_widget(box_foto)
+        right_layout.add_widget(row_nome_foto)
 
-        form_grid.add_widget(Label(text='Lotto:', color=(0.1, 0.1, 0.1, 1)))
-        self.spinner_lotto = Spinner(text='Seleziona o scrivi...', values=self.get_valori_colonna('lotto'))
-        form_grid.add_widget(self.spinner_lotto)
+        box_bc = BoxLayout(orientation="vertical", spacing=3, size_hint_y=None, height=55)
+        box_bc.add_widget(Label(text="Codice a barre (EAN):", color=(0.1,0.1,0.1,1), font_size=12, halign="left", size_hint_y=None, height=20))
+        self.txt_barcode = TextInput(hint_text="Codice a barre...", multiline=False)
+        box_bc.add_widget(self.txt_barcode)
+        right_layout.add_widget(box_bc)
 
-        form_grid.add_widget(Label(text='Scadenza (YYYY-MM-DD):', color=(0.1, 0.1, 0.1, 1)))
-        self.input_scadenza = TextInput(text='', multiline=False)
-        form_grid.add_widget(self.input_scadenza)
+        self.txt_cat = self.crea_campo(right_layout, "Categoria:", "Seleziona o scrivi...")
+        self.txt_lotto = self.crea_campo(right_layout, "Lotto:", "Seleziona o scrivi...")
+        self.txt_scad = self.crea_campo(right_layout, "Scadenza (YYYY-MM-DD):", "YYYY-MM-DD")
+        self.txt_prezzo = self.crea_campo(right_layout, "Prezzo di Vendita (CHF):", "0.00")
+        self.txt_giac = self.crea_campo(right_layout, "Giacenza Fisica:", "0.0")
+        self.txt_pos = self.crea_campo(right_layout, "Categoria POS (Doc. Z):", "Seleziona...")
+        self.txt_colore = self.crea_campo(right_layout, "Colore Pulsante (Hex):", "#333333")
 
-        form_grid.add_widget(Label(text='Prezzo di Vendita (CHF):', color=(0.1, 0.1, 0.1, 1)))
-        self.input_prezzo = TextInput(text='0.0', multiline=False)
-        form_grid.add_widget(self.input_prezzo)
-
-        form_grid.add_widget(Label(text='Giacenza Fisica:', color=(0.1, 0.1, 0.1, 1)))
-        self.input_giacenza = TextInput(text='0.0', multiline=False)
-        form_grid.add_widget(self.input_giacenza)
-
-        form_grid.add_widget(Label(text='Categoria POS (Doc. Z):', color=(0.1, 0.1, 0.1, 1)))
-        self.spinner_categoria_pos = Spinner(text='Seleziona...', values=self.get_valori_colonna('categoria_pos'))
-        form_grid.add_widget(self.spinner_categoria_pos)
-
-        form_grid.add_widget(Label(text='Colore Pulsante (Hex):', color=(0.1, 0.1, 0.1, 1)))
-        self.input_colore = TextInput(text='#333333', multiline=False)
-        form_grid.add_widget(self.input_colore)
-
-        right_main_layout.add_widget(form_grid)
-
-        actions_layout = BoxLayout(size_hint_y=None, height=45, spacing=10)
-        btn_salva = Button(text='Salva Modifiche / Nuovo', background_color=(0.1, 0.5, 0.8, 1))
-        btn_salva.bind(on_press=self.salva_prodotto)
-        actions_layout.add_widget(btn_salva)
-
-        btn_elimina = Button(text='Elimina Selezionati / Corrente', background_color=(0.8, 0.2, 0.2, 1))
-        btn_elimina.bind(on_press=self.elimina_prodotto)
-        actions_layout.add_widget(btn_elimina)
-
-        right_main_layout.add_widget(actions_layout)
-
-        body_layout.add_widget(right_main_layout)
-        self.add_widget(body_layout)
-
-        self.aggiorna_spinner_filtro()
-        self.aggiorna_lista_prodotti()
-
-    def cambia_vista(self, vista):
-        self.modalita_vista = vista
-        if vista == 'elenco':
-            self.btn_vista_elenco.background_color = (0.1, 0.4, 0.6, 1)
-            self.btn_vista_griglia.background_color = (0.3, 0.3, 0.3, 1)
-            self.label_titolo_lista.text = 'Elenco Articoli (Tutti / Seleziona)'
-            self.layout_lista_prodotti.cols = 1
-        else:
-            self.btn_vista_griglia.background_color = (0.1, 0.4, 0.6, 1)
-            self.btn_vista_elenco.background_color = (0.3, 0.3, 0.3, 1)
-            self.label_titolo_lista.text = 'Vista Griglia / Cartellini (Kanban)'
-            self.layout_lista_prodotti.cols = 2
-        self.aggiorna_lista_prodotti()
-
-    def get_valori_colonna(self, colonna):
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute(f"SELECT DISTINCT {colonna} FROM prodotti WHERE {colonna} IS NOT NULL AND {colonna} != '' ORDER BY {colonna} ASC")
-            valori = [str(r[0]) for r in cursor.fetchall()]
-            conn.close()
-            return valori if valori else ['Nessun valore']
-        except:
-            return ['Nessun valore']
-
-    def apri_popup_raggruppamento(self, instance):
-        content = BoxLayout(orientation='vertical', padding=15, spacing=10)
+        action_row = BoxLayout(size_hint_y=None, height=45, spacing=10, padding=[0, 10, 0, 0])
+        btn_salva = Button(text="Salva Modifiche / Nuovo", background_normal="", background_color=(0.1, 0.5, 0.8, 1), bold=True)
+        btn_salva.bind(on_press=self.salva_articolo)
+        btn_elimina = Button(text="Elimina Selezionati / Corrente", background_normal="", background_color=(0.8, 0.2, 0.2, 1), bold=True)
+        btn_elimina.bind(on_press=self.elimina_articolo)
         
-        criteri = [
-            ("Raggruppa per Categoria", "categoria"),
-            ("Raggruppa per Lotto", "lotto"),
-            ("Raggruppa per Scadenza", "data_scadenza"),
-            ("Raggruppa per Prezzo", "prezzo"),
-            ("Raggruppa per Giacenza", "giacenza"),
-            ("Raggruppa per Categoria POS", "categoria_pos"),
-            ("Raggruppa per Colore", "colore_pulsante")
+        action_row.add_widget(btn_salva)
+        action_row.add_widget(btn_elimina)
+        right_layout.add_widget(action_row)
+
+        main_split.add_widget(right_layout)
+        root.add_widget(main_split)
+        
+        self.clear_widgets()
+        self.add_widget(root)
+        self.aggiorna_lista_video()
+
+    def crea_campo(self, parent, label_text, hint):
+        row_f = BoxLayout(size_hint_y=None, height=35, spacing=10)
+        lbl = Label(text=label_text, color=(0.1,0.1,0.1,1), font_size=12, size_hint_x=0.45, halign="right")
+        lbl.bind(size=lbl.setter("text_size"))
+        ti = TextInput(text="0.00" if hint=="0.00" else ("0.0" if hint=="0.0" else ("#333333" if hint=="#333333" else "")), hint_text=hint, multiline=False, size_hint_x=0.55)
+        row_f.add_widget(lbl)
+        row_f.add_widget(ti)
+        parent.add_widget(row_f)
+        return ti
+
+    def carica_dati(self):
+        if os.path.exists(DB_FILE):
+            try:
+                with open(DB_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except:
+                pass
+        return [
+            {"nome": "Prodotto Test 1", "barcode": "123456", "cat": "Bevande", "lotto": "A1", "scad": "2027-01-01", "prezzo": 5.00, "giac": 10.0, "pos": "Reparto 1", "colore": "#ff5500", "foto": "", "selezionato": False},
+            {"nome": "Prodotto Test 2", "barcode": "654321", "cat": "Snack", "lotto": "B2", "scad": "2027-06-01", "prezzo": 3.50, "giac": 25.0, "pos": "Reparto 2", "colore": "#ffdd00", "foto": "", "selezionato": False}
         ]
 
-        scroll = ScrollView(size_hint=(1, 1))
-        grid = GridLayout(cols=1, spacing=8, size_hint_y=None)
-        grid.bind(minimum_height=grid.setter('height'))
+    def salva_dati(self):
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(self.articoli, f, indent=4, ensure_ascii=False)
 
-        checkboxes_popup = {}
+    def cambia_vista(self, tipo):
+        self.vista_attuale = tipo
+        if tipo == "elenco":
+            self.btn_elenco.background_color = (0.1, 0.4, 0.6, 1)
+            self.btn_griglia.background_color = (0.2, 0.2, 0.2, 1)
+        else:
+            self.btn_griglia.background_color = (0.1, 0.4, 0.6, 1)
+            self.btn_elenco.background_color = (0.2, 0.2, 0.2, 1)
+        self.aggiorna_lista_video(self.txt_cerca.text)
 
-        for titolo, chiave in criteri:
-            row = BoxLayout(orientation='horizontal', size_hint_y=None, height=40, spacing=10)
-            chk = CheckBox(size_hint_x=None, width=40, color=(0.1, 0.4, 0.8, 1))
-            if chiave in self.criteri_raggruppamento_attivi:
-                chk.active = True
-            checkboxes_popup[chiave] = chk
-            row.add_widget(chk)
+    def pagina_precedente(self, *args):
+        if self.pagina_corrente > 0:
+            self.pagina_corrente -= 1
+            self.aggiorna_lista_video(self.txt_cerca.text)
 
-            lbl_item = Label(text=titolo, font_size=15, bold=True, halign='left', valign='middle', color=(1, 1, 1, 1))
-            lbl_item.bind(size=lambda s, w: setattr(s, 'text_size', (s.width - 10, s.height)))
-            row.add_widget(lbl_item)
-            grid.add_widget(row)
+    def pagina_successiva(self, *args):
+        filtro = self.txt_cerca.text.lower()
+        filtrati = [a for a in self.articoli if not filtro or filtro in a["nome"].lower() or filtro in a["barcode"].lower()]
+        tot_pagine = max(1, (len(filtrati) + self.elementi_per_pagina - 1) // self.elementi_per_pagina)
+        if self.pagina_corrente < tot_pagine - 1:
+            self.pagina_corrente += 1
+            self.aggiorna_lista_video(self.txt_cerca.text)
 
-        scroll.add_widget(grid)
-        content.add_widget(scroll)
+    def apri_selettore_apertura(self):
+        FileChooserPopup(callback=self.importa_file, mode="open").open()
 
-        bottom_btns = BoxLayout(size_hint_y=None, height=45, spacing=10)
-        btn_applica = Button(text='Applica Raggruppamento', background_color=(0.1, 0.4, 0.7, 1))
-        btn_annulla = Button(text='Chiudi', background_color=(0.5, 0.5, 0.5, 1))
-        bottom_btns.add_widget(btn_applica)
-        bottom_btns.add_widget(btn_annulla)
-        content.add_widget(bottom_btns)
+    def apri_selettore_salvataggio(self):
+        FileChooserPopup(callback=self.esporta_file, mode="save").open()
 
-        popup = Popup(title='Raggruppa per (Stile Odoo)', content=content, size_hint=(0.65, 0.75))
+    def esporta_file(self, filepath):
+        try:
+            if filepath.endswith((".xlsx", ".xls")) and pd is not None:
+                pd.DataFrame(self.articoli).to_excel(filepath, index=False)
+            else:
+                with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
+                    w = csv.writer(f, delimiter=";")
+                    w.writerow(["Nome", "Barcode", "Categoria", "Lotto", "Scadenza", "Prezzo", "Giacenza", "POS", "Colore", "Foto"])
+                    for a in self.articoli:
+                        w.writerow([a.get("nome", ""), a.get("barcode", ""), a.get("cat", ""), a.get("lotto", ""), a.get("scad", ""), a.get("prezzo", 0), a.get("giac", 0), a.get("pos", ""), a.get("colore", ""), a.get("foto", "")])
+            self.lbl_stato_lista.text = "Esportato con successo!"
+        except Exception as e:
+            self.lbl_stato_lista.text = "Errore: " + str(e)
 
-        def applica_e_chiudi(instance):
-            try:
-                self.criteri_raggruppamento_attivi = [chiave for chiave, chk in checkboxes_popup.items() if chk.active]
-                if self.criteri_raggruppamento_attivi:
-                    self.btn_filtro_avanzato.text = f"Raggruppato per ({len(self.criteri_raggruppamento_attivi)} livelli)"
-                else:
-                    self.btn_filtro_avanzato.text = "Raggruppa per..."
-                self.aggiorna_lista_prodotti()
-            except Exception as e:
-                print("Errore ordinamento:", e)
-            finally:
-                popup.dismiss()
+    def importa_file(self, filepath):
+        if not os.path.exists(filepath): return
+        try:
+            nuovi = importa_magazzino_excel(filepath)
+            if nuovi:
+                self.articoli = nuovi
+                self.salva_dati()
+                self.pagina_corrente = 0
+                self.aggiorna_lista_video()
+                self.lbl_stato_lista.text = "Importati " + str(len(nuovi)) + " articoli!"
+        except Exception as e:
+            self.lbl_stato_lista.text = "Errore import: " + str(e)
 
-    def aggiorna_spinner_filtro(self):
-        cat_vals = self.get_valori_colonna('categoria')
-        self.spinner_categoria.values = cat_vals if cat_vals else ['Seleziona o scrivi...']
+    def aggiorna_lista_video(self, filtro=""):
+        self.list_content.clear_widgets()
         
-        lotto_vals = self.get_valori_colonna('lotto')
-        self.spinner_lotto.values = lotto_vals if lotto_vals else ['Seleziona o scrivi...']
-        
-        pos_vals = self.get_valori_colonna('categoria_pos')
-        self.spinner_categoria_pos.values = pos_vals if pos_vals else ['Seleziona...']
-
-    def toggle_seleziona_tutti_master(self, instance, value):
-        for chk in self.checkboxes_prodotti.values():
-            chk.active = value
-
-    def aggiorna_lista_prodotti(self):
-        self.layout_lista_prodotti.clear_widgets()
-        self.checkboxes_prodotti.clear()
-
-        testo_ricerca = self.input_ricerca.text.strip().lower()
-
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-
-        # Migrazione automatica delle colonne mancanti
-        cursor.execute("PRAGMA table_info(prodotti)")
-        colonne_esistenti = [col[1] for col in cursor.fetchall()]
-        colonne_richieste = {
-            "codice_barra": "TEXT",
-            "categoria": "TEXT",
-            "lotto": "TEXT",
-            "data_scadenza": "TEXT",
-            "categoria_pos": "TEXT",
-            "colore_pulsante": "TEXT"
-        }
-        for col_nome, col_tipo in colonne_richieste.items():
-            if col_nome not in colonne_esistenti:
-                cursor.execute(f"ALTER TABLE prodotti ADD COLUMN {col_nome} {col_tipo}")
-                conn.commit()
-
-        cursor.execute("SELECT id, codice_barra, nome, prezzo, categoria, giacenza, lotto, data_scadenza, categoria_pos, colore_pulsante FROM prodotti ORDER BY nome ASC")
-        prodotti = cursor.fetchall()
-        conn.close()
-
-        mappa_indici = {
-            'categoria': 4,
-            'lotto': 6,
-            'data_scadenza': 7,
-            'prezzo': 3,
-            'giacenza': 5,
-            'categoria_pos': 8,
-            'colore_pulsante': 9
-        }
-
-        if self.criteri_raggruppamento_attivi:
-            def chiave_ordinamento(prod):
-                chiavi_tupla = []
-                for c in self.criteri_raggruppamento_attivi:
-                    idx = mappa_indici[c]
-                    val = prod[idx]
-                    if c in ['prezzo', 'giacenza']:
-                        try:
-                            chiavi_tupla.append(float(val or 0.0))
-                        except:
-                            chiavi_tupla.append(0.0)
-                    else:
-                        chiavi_tupla.append(str(val or 'Senza Valore'))
-                return tuple(chiavi_tupla)
-
-            try:
-                prodotti.sort(key=chiave_ordinamento)
-            except Exception as e:
-                print("Errore ordinamento:", e)
-
-        ultimi_valori_gruppo = {}
-
-        for p in prodotti:
-            p_id, barcode, nome, prezzo, categoria, giacenza, lotto, scadenza, cat_pos, colore = p
-            nome_str = str(nome or 'Senza Nome')
-            barcode_str = str(barcode or 'N/D')
-            cat_str = str(categoria or 'N/D')
-            lotto_str = str(lotto or 'N/D')
-            scad_str = str(scadenza or 'N/D')
-            prezzo_val = float(prezzo or 0.0)
-            giac_val = float(giacenza or 0.0)
-            pos_str = str(cat_pos or 'N/D')
-            col_str = str(colore or 'N/D')
-
-            mappa_valori_correnti = {
-                'categoria': cat_str,
-                'lotto': lotto_str,
-                'data_scadenza': scad_str,
-                'prezzo': f"CHF {prezzo_val:.2f}",
-                'giacenza': f"{giac_val}",
-                'categoria_pos': pos_str,
-                'colore_pulsante': col_str
-            }
-
-            if self.criteri_raggruppamento_attivi:
-                for idx_livello, criterio in enumerate(self.criteri_raggruppamento_attivi):
-                    val_curr = mappa_valori_correnti[criterio]
-                    livello_chiave = tuple(self.criteri_raggruppamento_attivi[:idx_livello+1])
-                    
-                    if ultimi_valori_gruppo.get(livello_chiave) != val_curr:
-                        ultimi_valori_gruppo[livello_chiave] = val_curr
-                        for k in list(ultimi_valori_gruppo.keys()):
-                            if len(k) > len(livello_chiave):
-                                del ultimi_valori_gruppo[k]
-
-                        indentazione = "    " * idx_livello
-                        lbl_gruppo = Label(
-                            text=f"{indent}📂 {criterio.upper()}: {val_curr}", 
-                            font_size=13 - idx_livello, 
-                            bold=True, 
-                            size_hint_y=None, 
-                            height=28, 
-                            color=(0.1 + (idx_livello*0.1), 0.4, 0.8 - (idx_livello*0.1), 1),
-                            halign='left'
-                        )
-                        lbl_gruppo.bind(size=lambda s, w: setattr(s, 'text_size', (s.width - 10, s.height)))
-                        self.layout_lista_prodotti.add_widget(lbl_gruppo)
-
-            if testo_ricerca and (testo_ricerca not in nome_str.lower() and testo_ricerca not in barcode_str.lower()):
+        filtrati = []
+        for idx, art in enumerate(self.articoli):
+            if filtro and filtro.lower() not in art["nome"].lower() and filtro.lower() not in art["barcode"].lower():
                 continue
-
-            if self.modalita_vista == 'elenco':
-                row_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=32, spacing=5)
-                
-                chk = CheckBox(size_hint_x=None, width=35, color=(0.1, 0.4, 0.8, 1))
-                if self.chk_master.active:
-                    chk.active = True
-                self.checkboxes_prodotti[p_id] = chk
-                row_box.add_widget(chk)
-
-                testo_riga = f"{nome_str}    |    Cat: {cat_str}    |    Lotto: {lotto_str}    |    CHF {prezzo_val:.2f}    |    Giac: {giac_val}"
-                
-                btn_riga = Button(text=testo_riga, font_size=13, background_normal='', background_color=(0, 0, 0, 0), color=(0, 0, 0, 1), halign='left', valign='middle')
-                btn_riga.bind(size=lambda s, w: setattr(s, 'text_size', (s.width - 10, s.height)))
-                btn_riga.bind(on_press=lambda instance, pid=p_id: self.seleziona_prodotto(pid))
-                row_box.add_widget(btn_riga)
-
-                self.layout_lista_prodotti.add_widget(row_box)
-            else:
-                card_box = BoxLayout(orientation='vertical', size_hint_y=None, height=90, padding=2, spacing=2)
-                top_card = BoxLayout(size_hint_y=None, height=25, spacing=5)
-                chk = CheckBox(size_hint_x=None, width=25, color=(0.1, 0.4, 0.8, 1))
-                if self.chk_master.active:
-                    chk.active = True
-                self.checkboxes_prodotti[p_id] = chk
-                top_card.add_widget(chk)
-                
-                btn_nome = Button(text=nome_str, bold=True, size_hint_y=None, height=25, background_color=(0.85, 0.85, 0.85, 1), color=(0, 0, 0, 1), halign='left')
-                btn_nome.bind(size=lambda s, w: setattr(s, 'text_size', (s.width - 10, s.height)))
-                btn_nome.bind(on_press=lambda instance, pid=p_id: self.seleziona_prodotto(pid))
-                top_card.add_widget(btn_nome)
-                card_box.add_widget(top_card)
-
-                info_testo = f"Lotto: {lotto_str} | Prezzo: CHF {prezzo_val:.2f} | Giac: {giac_val}\nBar: {barcode_str}"
-                btn_dett = Button(text=info_testo, font_size=11, size_hint_y=None, height=60, background_color=(0.92, 0.92, 0.92, 1), color=(0, 0, 0, 1), halign='left', valign='middle')
-                btn_dett.bind(size=lambda s, w: setattr(s, 'text_size', (s.width - 10, s.height)))
-                btn_dett.bind(on_press=lambda instance, pid=p_id: self.seleziona_prodotto(pid))
-                card_box.add_widget(btn_dett)
-
-                self.layout_lista_prodotti.add_widget(card_box)
-
-    def seleziona_tutti(self, instance):
-        self.chk_master.active = True
-        for chk in self.checkboxes_prodotti.values():
-            chk.active = True
-
-    def deseleziona_tutti(self, instance):
-        self.chk_master.active = False
-        for chk in self.checkboxes_prodotti.values():
-            chk.active = False
-
-    def seleziona_prodotto(self, prodotto_id):
-        self.prodotto_selezionato_id = prodotto_id
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT codice_barra, nome, categoria, categoria_pos, prezzo, giacenza, lotto, data_scadenza, colore_pulsante, foto_path FROM prodotti WHERE id = ?", (prodotto_id,))
-        p = cursor.fetchone()
-        conn.close()
-
-        if p:
-            self.input_barcode.text = str(p[0] or '')
-            self.input_nome.text = str(p[1] or '')
-            cat_val = str(p[2] or '')
-            self.spinner_categoria.text = cat_val if cat_val else 'Seleziona o scrivi...'
-            cat_pos_val = str(p[3] or '')
-            self.spinner_categoria_pos.text = cat_pos_val if cat_pos_val else 'Seleziona...'
-            self.input_prezzo.text = str(p[4] or 0.0)
-            self.input_giacenza.text = str(p[5] or 0.0)
-            lotto_val = str(p[6] or '')
-            self.spinner_lotto.text = lotto_val if lotto_val else 'Seleziona o scrivi...'
-            self.input_scadenza.text = str(p[7] or '')
-            self.input_colore.text = str(p[8] or '#333333')
-            self.input_foto.text = str(p[9] or '')
-
-    def salva_prodotto(self, instance):
-        try:
-            barcode = self.input_barcode.text.strip()
-            nome = self.input_nome.text.strip()
-            categoria = self.spinner_categoria.text.strip()
-            if categoria == 'Seleziona o scrivi...':
-                categoria = ''
-            categoria_pos = self.spinner_categoria_pos.text.strip()
-            if categoria_pos == 'Seleziona...':
-                categoria_pos = ''
-            prezzo = float(self.input_prezzo.text.strip() or 0.0)
-            giacenza = float(self.input_giacenza.text.strip() or 0.0)
-            lotto = self.spinner_lotto.text.strip()
-            if lotto == 'Seleziona o scrivi...':
-                lotto = ''
-            data_scadenza = self.input_scadenza.text.strip()
-            colore_pulsante = self.input_colore.text.strip() or '#333333'
-            foto_path = self.input_foto.text.strip()
-
-            if not nome:
-                self.mostra_popup('Attenzione', 'Il nome del prodotto è obbligatorio.')
-                return
-
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-
-            if self.prodotto_selezionato_id:
-                cursor.execute("""
-                    UPDATE prodotti 
-                    SET codice_barra=?, nome=?, categoria=?, categoria_pos=?, prezzo=?, giacenza=?, lotto=?, data_scadenza=?, colore_pulsante=?, foto_path=? 
-                    WHERE id=?
-                """, (barcode, nome, categoria, categoria_pos, prezzo, giacenza, lotto, data_scadenza, colore_pulsante, foto_path, self.prodotto_selezionato_id))
-            else:
-                cursor.execute("""
-                    INSERT INTO prodotti (codice_barra, nome, categoria, categoria_pos, prezzo, giacenza, lotto, data_scadenza, colore_pulsante, foto_path) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (barcode, nome, categoria, categoria_pos, prezzo, giacenza, lotto, data_scadenza, colore_pulsante, foto_path))
-
-            conn.commit()
-            conn.close()
-            self.aggiorna_spinner_filtro()
-            self.aggiorna_lista_prodotti()
-            self.mostra_popup('Successo', 'Prodotto salvato con successo!')
-        except Exception as e:
-            self.mostra_popup('Errore', str(e))
-
-        try:
-            ids_selezionati = [pid for pid, chk in self.checkboxes_prodotti.items() if chk.active]
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-
-            if ids_selezionati:
-                cursor.executemany("DELETE FROM prodotti WHERE id=?", [(pid,) for pid in ids_selezionati])
-                msg = f"Eliminati {len(ids_selezionati)} prodotti selezionati."
-            elif self.prodotto_selezionato_id:
-                cursor.execute("DELETE FROM prodotti WHERE id=?", (self.prodotto_selezionato_id,))
-                msg = "Prodotto corrente eliminato."
-                self.prodotto_selezionato_id = None
-            else:
-                self.mostra_popup('Attenzione', 'Seleziona almeno un prodotto o spunta i checkbox.')
-                conn.close()
-                return
-
-            conn.commit()
-            conn.close()
-            self.aggiorna_spinner_filtro()
-            self.aggiorna_lista_prodotti()
-            self.mostra_popup('Successo', msg)
-        except Exception as e:
-            self.mostra_popup('Errore', str(e))
-
-        try:
-            ids_selezionati = [pid for pid, chk in self.checkboxes_prodotti.items() if chk.active]
-            path = esporta_magazzino_excel(ids_selezionati if ids_selezionati else None)
-            msg = f"Esportazione completata ({len(ids_selezionati)} articoli selezionati) in: {path}" if ids_selezionati else f"Catalogo completo esportato in: {path}"
-            self.mostra_popup('Successo', msg)
-        except Exception as e:
-            self.mostra_popup('Errore', str(e))
-
-        from kivy.utils import platform
-        if platform == 'android':
-            self.apri_selettore_file_excel(on_selection=self._on_file_selected)
-        else:
-            import subprocess
-            try:
-                file_path = subprocess.check_output(['zenity', '--file-selection'], text=True).strip()
-                if file_path:
-                    self._on_file_selected([file_path])
-            except Exception as e:
-                print(f"Errore nella selezione file: {e}")
-
-        try:
-            ids_selezionati = [pid for pid, chk in self.checkboxes_prodotti.items() if chk.active]
-            path = esporta_magazzino_excel(ids_selezionati if ids_selezionati else None)
-            msg = f"Esportazione completata ({len(ids_selezionati)} articoli selezionati) in: {path}" if ids_selezionati else f"Catalogo completo esportato in: {path}"
-            self.mostra_popup('Successo', msg)
-        except Exception as e:
-            self.mostra_popup('Errore', str(e))
-
-        from kivy.utils import platform
-        if platform == 'android':
-            self.apri_selettore_file_excel(on_selection=self._on_file_selected)
-        else:
-            import subprocess
-            try:
-                file_path = subprocess.check_output(['zenity', '--file-selection'], text=True).strip()
-                if file_path:
-                    self._on_file_selected([file_path])
-            except Exception as e:
-                print(f"Errore nella selezione file: {e}")
-
-    def elimina_prodotto(self, instance):
-        try:
-            ids_selezionati = [pid for pid, chk in self.checkboxes_prodotti.items() if chk.active]
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-
-            if ids_selezionati:
-                cursor.executemany("DELETE FROM prodotti WHERE id=?", [(pid,) for pid in ids_selezionati])
-                msg = f"Eliminati {len(ids_selezionati)} prodotti selezionati."
-            elif self.prodotto_selezionato_id:
-                cursor.execute("DELETE FROM prodotti WHERE id=?", (self.prodotto_selezionato_id,))
-                msg = "Prodotto corrente eliminato."
-                self.prodotto_selezionato_id = None
-            else:
-                self.mostra_popup('Attenzione', 'Seleziona almeno un prodotto o spunta i checkbox.')
-                conn.close()
-                return
-
-            conn.commit()
-            conn.close()
-            self.aggiorna_spinner_filtro()
-            self.aggiorna_lista_prodotti()
-            self.mostra_popup('Successo', msg)
-        except Exception as e:
-            self.mostra_popup('Errore', str(e))
-
-    def esporta_dati(self, instance):
-        try:
-            ids_selezionati = [pid for pid, chk in self.checkboxes_prodotti.items() if chk.active]
-            path = esporta_magazzino_excel(ids_selezionati if ids_selezionati else None)
-            msg = f"Esportazione completata ({len(ids_selezionati)} articoli selezionati) in: {path}" if ids_selezionati else f"Catalogo completo esportato in: {path}"
-            self.mostra_popup('Successo', msg)
-        except Exception as e:
-            self.mostra_popup('Errore', str(e))
-
-    
-
-    def importa_dati(self, instance):
-        """Metodo diretto chiamato al click su Importa Excel."""
-        self.apri_selettore_file_excel()
-
-    
-
-    
-
-    
-
-    def apri_selettore_file_excel(self, *args):
-        """Apre un popup pulito e senza accavallamenti per scegliere qualsiasi file Excel o CSV da importare."""
-        import os
-        from kivy.uix.popup import Popup
-        from kivy.uix.boxlayout import BoxLayout
-        from kivy.uix.scrollview import ScrollView
-        from kivy.uix.button import Button
-        from kivy.uix.label import Label
-        from kivy.core.window import Window
-        
-        Window.show_cursor = True
-        
-        # Scansiona tutte le cartelle per trovare qualsiasi file excel/csv disponibile
-        cartelle = [os.path.abspath("dati_excel"), os.path.abspath(".")]
-        file_trovati = []
-        visti = set()
-        
-        for c in cartelle:
-            if os.path.exists(c):
-                for f in os.listdir(c):
-                    if f.endswith((".xlsx", ".xls", ".csv")) and f not in visti:
-                        visti.add(f)
-                        file_trovati.append((f, os.path.join(c, f)))
-                        
-        # Layout principale del popup con spaziatura corretta per evitare accavallamenti
-        root_layout = BoxLayout(orientation='vertical', spacing=15, padding=25)
-        
-        # Titolo chiaro
-        root_layout.add_widget(Label(
-            text="Seleziona il file Excel da importare:",
-            size_hint_y=None,
-            height=40,
-            font_size=18,
-            bold=True,
-            halign='center',
-            valign='middle'
-        ))
-        
-        # Area scorrevole per la lista dei file
-        scroll = ScrollView(size_hint=(1, 1))
-        lista_layout = BoxLayout(orientation='vertical', size_hint_y=None, spacing=10)
-        lista_layout.bind(minimum_height=lista_layout.setter('height'))
-        
-        popup_holder = {}
-        
-        if not file_trovati:
-            lista_layout.add_widget(Label(
-                text="Nessun file Excel trovato nelle cartelle di lavoro.",
-                size_hint_y=None,
-                height=50,
-                font_size=15
-            ))
-        else:
-            for nome_file, percorso in file_trovati:
-                btn_file = Button(
-                    text=f"📊 {nome_file}  ({percorso})",
-                    size_hint_y=None,
-                    height=50,
-                    background_color=(0.15, 0.4, 0.7, 1),
-                    font_size=15
-                )
-                def crea_handler(p=percorso):
-                    return lambda instance: self._importa_file_scelto(p, popup_holder.get('popup'))
-                btn_file.bind(on_press=crea_handler())
-                lista_layout.add_widget(btn_file)
-                
-        scroll.add_widget(lista_layout)
-        root_layout.add_widget(scroll)
-        
-        # Pulsante Annulla in basso
-        btn_chiudi = Button(
-            text="Annulla",
-            size_hint_y=None,
-            height=45,
-            background_color=(0.8, 0.2, 0.2, 1),
-            font_size=16
-        )
-        root_layout.add_widget(btn_chiudi)
-        
-        popup = Popup(
-            title="",
-            separator_height=0,
-            content=root_layout,
-            size_hint=(0.85, 0.75)
-        )
-        popup_holder['popup'] = popup
-        btn_chiudi.bind(on_press=popup.dismiss)
-        
-        popup.open()
-        return True
-
-    def _importa_file_scelto(self, file_path, popup_inst):
-        if popup_inst:
-            popup_inst.dismiss()
-        print(f"Importazione file selezionato: {file_path}")
-        try:
-            import pandas as pd
-            df = pd.read_excel(file_path) if file_path.endswith((".xlsx", ".xls")) else pd.read_csv(file_path)
-            print(f"File letto con successo! Righe totali: {len(df)}")
+            filtrati.append((idx, art))
             
-            try:
-                from logic.excel_manager import importa_magazzino_excel
-                successo, messaggio = importa_magazzino_excel(file_path)
-                print(f"Esito database: {messaggio}")
-            except Exception as db_ex:
-                print(f"Nota salvataggio DB: {db_ex}")
+        tot_elementi = len(filtrati)
+        tot_pagine = max(1, (tot_elementi + self.elementi_per_pagina - 1) // self.elementi_per_pagina)
+        if self.pagina_corrente >= tot_pagine:
+            self.pagina_corrente = max(0, tot_pagine - 1)
+            
+        self.lbl_pagina.text = f"Pag. {self.pagina_corrente + 1} / {tot_pagine} ({tot_elementi} tot)"
+        
+        inizio = self.pagina_corrente * self.elementi_per_pagina
+        fine = inizio + self.elementi_per_pagina
+        pagina_articoli = filtrati[inizio:fine]
+        
+        if self.vista_attuale == "elenco":
+            for real_idx, art in pagina_articoli:
+                row = BoxLayout(size_hint_y=None, height=38, spacing=4)
+                chk_btn = Button(text="[ X ]" if art.get("selezionato") else "[   ]", size_hint_x=None, width=40, background_normal="", background_color=(0.85, 0.85, 0.85, 1), color=(0,0,0,1), bold=True)
+                chk_btn.bind(on_press=lambda inst, i=real_idx: self.toggle_seleziona(i))
                 
-            if hasattr(self, "aggiorna_lista_prodotti"):
-                self.aggiorna_lista_prodotti()
-                print("Tabella magazzino aggiornata con successo a schermo!")
-        except Exception as e:
-            print(f"Errore durante l importazione: {e}")
+                txt = f"📦 {art['nome']} | EAN: {art.get('barcode','-')} | Cat: {art['cat']} | Lotto: {art['lotto']} | Scad: {art.get('scad','-')} | CHF {art['prezzo']} | Giac: {art['giac']}"
+                btn = Button(text=txt, background_normal="", background_color=(0.95, 0.95, 0.95, 1), color=(0.1,0.1,0.1,1), font_size=12, halign="left")
+                btn.bind(size=btn.setter("text_size"))
+                btn.bind(on_press=lambda inst, i=real_idx: self.carica_articolo_in_form(i))
+                
+                row.add_widget(chk_btn)
+                row.add_widget(btn)
+                self.list_content.add_widget(row)
+        else:
+            grid = GridLayout(cols=2, spacing=10, size_hint_y=None)
+            grid.bind(minimum_height=grid.setter("height"))
+            for real_idx, art in pagina_articoli:
+                card = BoxLayout(orientation="vertical", size_hint_y=None, height=130, padding=6, spacing=4)
+                with card.canvas.before:
+                    Color(0.88, 0.88, 0.88, 1)
+                    Rectangle(size=card.size, pos=card.pos)
+                card.bind(size=lambda c, s: setattr(c.canvas.before.children[-1], 'size', s))
+                
+                top_card = BoxLayout(orientation="horizontal", spacing=6, size_hint_y=None, height=70)
+                
+                foto_path = art.get("foto", "")
+                if foto_path and os.path.exists(foto_path):
+                    img = KivyImage(source=foto_path, size_hint_x=None, width=70)
+                else:
+                    img = Button(text="[Foto]", size_hint_x=None, width=70, background_normal="", background_color=(0.8, 0.8, 0.8, 1), color=(0.2,0.2,0.2,1), font_size=11)
+                top_card.add_widget(img)
+                
+                info_box = BoxLayout(orientation="vertical", spacing=2)
+                lbl_n = Label(text=art['nome'], color=(0.1,0.1,0.1,1), bold=True, font_size=12, halign="left")
+                lbl_n.bind(size=lbl_n.setter("text_size"))
+                lbl_d = Label(text=f"CHF {art['prezzo']} | Giac: {art['giac']}\nCat: {art['cat']}", color=(0.3,0.3,0.3,1), font_size=11, halign="left")
+                lbl_d.bind(size=lbl_d.setter("text_size"))
+                info_box.add_widget(lbl_n)
+                info_box.add_widget(lbl_d)
+                top_card.add_widget(info_box)
+                
+                card.add_widget(top_card)
+                
+                btn_card = Button(text="Seleziona / Modifica", size_hint_y=None, height=30, background_normal="", background_color=(0.1, 0.4, 0.6, 1), bold=True)
+                btn_card.bind(on_press=lambda inst, i=real_idx: self.carica_articolo_in_form(i))
+                card.add_widget(btn_card)
+                
+                grid.add_widget(card)
+            self.list_content.add_widget(grid)
+        
+        if self.articoli and all(a.get("selezionato", False) for a in self.articoli):
+            self.btn_master_chk.text = "[ X ]"
+        else:
+            self.btn_master_chk.text = "[   ]"
 
-    def importa_dati(self, instance):
-        self.apri_selettore_file_excel()
-        return True
+    def toggle_master_seleziona(self, *args):
+        tutti_selezionati = all(a.get("selezionato", False) for a in self.articoli) if self.articoli else False
+        status = not tutti_selezionati
+        for a in self.articoli:
+            a["selezionato"] = status
+        self.btn_master_chk.text = "[ X ]" if status else "[   ]"
+        self.aggiorna_lista_video(self.txt_cerca.text)
 
+    def toggle_seleziona(self, idx):
+        self.articoli[idx]["selezionato"] = not self.articoli[idx].get("selezionato", False)
+        self.aggiorna_lista_video(self.txt_cerca.text)
 
-    def seleziona_immagine(self, *args):
-        print("seleziona_immagine richiamato.")
-        return True
+    def seleziona_tutti(self, *args):
+        for a in self.articoli: a["selezionato"] = True
+        self.btn_master_chk.text = "[ X ]"
+        self.aggiorna_lista_video(self.txt_cerca.text)
+
+    def deseleziona_tutti(self, *args):
+        for a in self.articoli: a["selezionato"] = False
+        self.btn_master_chk.text = "[   ]"
+        self.aggiorna_lista_video(self.txt_cerca.text)
+
+    def cerca_articoli(self, inst, val):
+        self.pagina_corrente = 0
+        self.aggiorna_lista_video(val)
+
+    def filtra_scorte_basse(self, *args):
+        self.list_content.clear_widgets()
+        for idx, art in enumerate(self.articoli):
+            if art["giac"] <= 2.0:
+                row = BoxLayout(size_hint_y=None, height=35, spacing=5)
+                chk_btn = Button(text="[ X ]" if art.get("selezionato") else "[   ]", size_hint_x=None, width=45, background_normal="", background_color=(0.85, 0.85, 0.85, 1), color=(0,0,0,1), bold=True)
+                chk_btn.bind(on_press=lambda inst, i=idx: self.toggle_seleziona(i))
+                btn = Button(text="[ALLERTA] " + art["nome"] + " | Giac: " + str(art["giac"]), background_normal="", background_color=(1, 0.8, 0.8, 1), color=(0.8,0,0,1), halign="left")
+                btn.bind(size=btn.setter("text_size"))
+                btn.bind(on_press=lambda inst, i=idx: self.carica_articolo_in_form(i))
+                row.add_widget(chk_btn)
+                row.add_widget(btn)
+                self.list_content.add_widget(row)
+        self.lbl_stato_lista.text = "Elenco Articoli (Filtro Scorte Basse)"
+
+    def carica_articolo_in_form(self, idx):
+        self.articolo_selezionato_idx = idx
+        a = self.articoli[idx]
+        self.txt_nome.text = str(a.get("nome", ""))
+        self.txt_barcode.text = str(a.get("barcode", ""))
+        self.txt_cat.text = str(a.get("cat", "Generale"))
+        self.txt_lotto.text = str(a.get("lotto", "N/D"))
+        self.txt_scad.text = str(a.get("scad", ""))
+        self.txt_prezzo.text = str(a.get("prezzo", 0.0))
+        self.txt_giac.text = str(a.get("giac", 0.0))
+        self.txt_pos.text = str(a.get("pos", "Reparto 1"))
+        self.txt_colore.text = str(a.get("colore", "#333333"))
+        self.lbl_stato_lista.text = "In modifica: " + a.get("nome", "") + " (ID: " + str(idx) + ")"
+
+    def salva_articolo(self, *args):
+        try:
+            p = float(self.txt_prezzo.text.replace(",", ".") or 0)
+            g = float(self.txt_giac.text.replace(",", ".") or 0)
+        except:
+            p, g = 0.0, 0.0
+        art = {
+            "nome": self.txt_nome.text.strip() or "Senza Nome",
+            "barcode": self.txt_barcode.text.strip(),
+            "cat": self.txt_cat.text.strip() or "N/D",
+            "lotto": self.txt_lotto.text.strip() or "N/D",
+            "scad": self.txt_scad.text.strip(),
+            "prezzo": p,
+            "giac": g,
+            "pos": self.txt_pos.text.strip(),
+            "colore": self.txt_colore.text.strip() or "#333333",
+            "foto": self.articoli[self.articolo_selezionato_idx].get("foto", "") if self.articolo_selezionato_idx is not None and self.articolo_selezionato_idx < len(self.articoli) else "",
+            "selezionato": False
+        }
+        if self.articolo_selezionato_idx is not None and self.articolo_selezionato_idx < len(self.articoli):
+            self.articoli[self.articolo_selezionato_idx] = art
+        else:
+            self.articoli.append(art)
+        self.salva_dati()
+        self.aggiorna_lista_video(self.txt_cerca.text)
+        self.pulisci_form()
+        self.lbl_stato_lista.text = "Articolo salvato e aggiornato correttamente!"
+
+    def elimina_articolo(self, *args):
+        nuovi = [a for a in self.articoli if not a.get("selezionato", False)]
+        if len(nuovi) == len(self.articoli) and self.articolo_selezionato_idx is not None:
+            if self.articolo_selezionato_idx < len(self.articoli):
+                del self.articoli[self.articolo_selezionato_idx]
+        else:
+            self.articoli = nuovi
+        self.articolo_selezionato_idx = None
+        self.salva_dati()
+        self.aggiorna_lista_video(self.txt_cerca.text)
+        self.pulisci_form()
+        self.lbl_stato_lista.text = "Articolo/i eliminato/i con successo!"
+
+    def pulisci_form(self):
+        self.txt_nome.text = ""
+        self.txt_barcode.text = ""
+        self.txt_cat.text = ""
+        self.txt_lotto.text = ""
+        self.txt_scad.text = ""
+        self.txt_prezzo.text = "0.00"
+        self.txt_giac.text = "0.0"
+        self.txt_pos.text = ""
+        self.txt_colore.text = "#333333"
+        self.articolo_selezionato_idx = None
+
+    def _update_bg(self, instance, value):
+        self.bg_rect.pos = (0, 0)
+        self.bg_rect.size = (self.width, self.height)
+
+    def vai_a(self, nome):
+        app = App.get_running_app()
+        if hasattr(app, "sm") and app.sm:
+            app.sm.current = nome
+        elif self.manager:
+            self.manager.current = nome

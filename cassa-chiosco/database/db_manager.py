@@ -1,33 +1,43 @@
 import sqlite3
 import os
+from core.config import DB_PATH
 
-DB_PATH = "database/negozio.db"
+class DatabaseManager:
+    def __init__(self):
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+        self.init_db()
 
-def init_db():
-    os.makedirs("database", exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS prodotti (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            codice_barra TEXT UNIQUE,
-            nome TEXT NOT NULL,
-            categoria TEXT,
-            categoria_pos TEXT,
-            prezzo REAL DEFAULT 0.0,
-            giacenza REAL DEFAULT 0.0,
-            gestisce_lotti INTEGER DEFAULT 0,
-            lotto TEXT,
-            data_scadenza TEXT,
-            gestione_scadenza TEXT,
-            colore_pulsante TEXT DEFAULT '#333333',
-            foto_path TEXT
-        )
-    """)
-    
-    conn.commit()
-    conn.close()
+    def get_connection(self):
+        return sqlite3.connect(DB_PATH)
 
-if __name__ == "__main__":
-    init_db()
+    def init_db(self):
+        """Crea le tabelle iniziali se non esistono."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS prodotti (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codice TEXT UNIQUE,
+                nome TEXT,
+                prezzo REAL
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+    def esegui_query(self, query, parametri=()):
+        """Esegue query di scrittura/aggiornamento in modo sicuro."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(query, parametri)
+        conn.commit()
+        conn.close()
+
+    def recupera_dati(self, query, parametri=()):
+        """Esegue query di sola lettura."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(query, parametri)
+        risultati = cursor.fetchall()
+        conn.close()
+        return risultati

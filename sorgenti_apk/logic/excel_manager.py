@@ -61,7 +61,7 @@ def importa_magazzino_excel(file_path=None):
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS prodotti (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                barcode TEXT,
+                COALESCE(barcode, codice, codice_barre, ean, '') TEXT,
                 nome TEXT,
                 prezzo REAL,
                 giacenza REAL,
@@ -77,7 +77,7 @@ def importa_magazzino_excel(file_path=None):
         righe_caricate = 0
         for _, row in df.iterrows():
             # Troviamo i valori mappando le colonne del DataFrame
-            barcode_val = str(row.get("Barcode", row.get("codice_barra", row.get("Codice", ""))))
+            COALESCE(barcode, codice, codice_barre, ean, '')_val = str(row.get("Barcode", row.get("codice_barra", row.get("Codice", ""))))
             nome_val = str(row.get("Nome", row.get("Prodotto", row.get("Articolo", ""))))
             
             try:
@@ -93,15 +93,15 @@ def importa_magazzino_excel(file_path=None):
             categoria_val = str(row.get("Categoria", ""))
             
             # Inserimento dinamico in base alle colonne effettive presenti nel DB
-            if "codice_barra" in colonne_db and "barcode" in colonne_db:
-                cursor.execute("INSERT INTO prodotti (barcode, codice_barra, nome, prezzo, giacenza, categoria) VALUES (?, ?, ?, ?, ?, ?)",
-                               (barcode_val, barcode_val, nome_val, prezzo_val, giacenza_val, categoria_val))
+            if "codice_barra" in colonne_db and "COALESCE(barcode, codice, codice_barre, ean, '')" in colonne_db:
+                cursor.execute("INSERT INTO prodotti (COALESCE(barcode, codice, codice_barre, ean, ''), codice_barra, nome, prezzo, giacenza, categoria) VALUES (?, ?, ?, ?, ?, ?)",
+                               (COALESCE(barcode, codice, codice_barre, ean, '')_val, COALESCE(barcode, codice, codice_barre, ean, '')_val, nome_val, prezzo_val, giacenza_val, categoria_val))
             elif "codice_barra" in colonne_db:
                 cursor.execute("INSERT INTO prodotti (codice_barra, nome, prezzo, giacenza, categoria) VALUES (?, ?, ?, ?, ?)",
-                               (barcode_val, nome_val, prezzo_val, giacenza_val, categoria_val))
-            elif "barcode" in colonne_db:
-                cursor.execute("INSERT INTO prodotti (barcode, nome, prezzo, giacenza, categoria) VALUES (?, ?, ?, ?, ?)",
-                               (barcode_val, nome_val, prezzo_val, giacenza_val, categoria_val))
+                               (COALESCE(barcode, codice, codice_barre, ean, '')_val, nome_val, prezzo_val, giacenza_val, categoria_val))
+            elif "COALESCE(barcode, codice, codice_barre, ean, '')" in colonne_db:
+                cursor.execute("INSERT INTO prodotti (COALESCE(barcode, codice, codice_barre, ean, ''), nome, prezzo, giacenza, categoria) VALUES (?, ?, ?, ?, ?)",
+                               (COALESCE(barcode, codice, codice_barre, ean, '')_val, nome_val, prezzo_val, giacenza_val, categoria_val))
             else:
                 cursor.execute("INSERT INTO prodotti (nome, prezzo, giacenza, categoria) VALUES (?, ?, ?, ?)",
                                (nome_val, prezzo_val, giacenza_val, categoria_val))

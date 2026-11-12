@@ -101,11 +101,11 @@ class InterfacciaMagazzino(BoxLayout):
         name_box.add_widget(self.input_nome)
         fields_left_header.add_widget(name_box)
 
-        barcode_box = BoxLayout(orientation='vertical', spacing=2)
-        barcode_box.add_widget(Label(text='Codice a barre (EAN):', font_size=12, size_hint_y=None, height=18, color=(0.1, 0.1, 0.1, 1), halign='left'))
-        self.input_barcode = TextInput(text='', multiline=False, font_size=13)
-        barcode_box.add_widget(self.input_barcode)
-        fields_left_header.add_widget(barcode_box)
+        
+        
+        
+        COALESCE(barcode, codice, codice_barre, ean, '')_box.add_widget(self.input_COALESCE(barcode, codice, codice_barre, ean, ''))
+        fields_left_header.add_widget(COALESCE(barcode, codice, codice_barre, ean, '')_box)
 
         header_odoo.add_widget(fields_left_header)
 
@@ -334,9 +334,9 @@ class InterfacciaMagazzino(BoxLayout):
         ultimi_valori_gruppo = {}
 
         for p in prodotti:
-            p_id, barcode, nome, prezzo, categoria, giacenza, lotto, scadenza, cat_pos, colore = p
+        
             nome_str = str(nome or 'Senza Nome')
-            barcode_str = str(barcode or 'N/D')
+        
             cat_str = str(categoria or 'N/D')
             lotto_str = str(lotto or 'N/D')
             scad_str = str(scadenza or 'N/D')
@@ -379,7 +379,7 @@ class InterfacciaMagazzino(BoxLayout):
                         lbl_gruppo.bind(size=lambda s, w: setattr(s, 'text_size', (s.width - 10, s.height)))
                         self.layout_lista_prodotti.add_widget(lbl_gruppo)
 
-            if testo_ricerca and (testo_ricerca not in nome_str.lower() and testo_ricerca not in barcode_str.lower()):
+            if testo_ricerca and (testo_ricerca not in nome_str.lower() and testo_ricerca not in COALESCE(barcode, codice, codice_barre, ean, '')_str.lower()):
                 continue
 
             if self.modalita_vista == 'elenco':
@@ -414,7 +414,7 @@ class InterfacciaMagazzino(BoxLayout):
                 top_card.add_widget(btn_nome)
                 card_box.add_widget(top_card)
 
-                info_testo = f"Lotto: {lotto_str} | Prezzo: CHF {prezzo_val:.2f} | Giac: {giac_val}\nBar: {barcode_str}"
+        
                 btn_dett = Button(text=info_testo, font_size=11, size_hint_y=None, height=60, background_color=(0.92, 0.92, 0.92, 1), color=(0, 0, 0, 1), halign='left', valign='middle')
                 btn_dett.bind(size=lambda s, w: setattr(s, 'text_size', (s.width - 10, s.height)))
                 btn_dett.bind(on_press=lambda instance, pid=p_id: self.seleziona_prodotto(pid))
@@ -441,7 +441,7 @@ class InterfacciaMagazzino(BoxLayout):
         conn.close()
 
         if p:
-            self.input_barcode.text = str(p[0] or '')
+        
             self.input_nome.text = str(p[1] or '')
             cat_val = str(p[2] or '')
             self.spinner_categoria.text = cat_val if cat_val else 'Seleziona o scrivi...'
@@ -457,7 +457,7 @@ class InterfacciaMagazzino(BoxLayout):
 
     def salva_prodotto(self, instance):
         try:
-            barcode = self.input_barcode.text.strip()
+        
             nome = self.input_nome.text.strip()
             categoria = self.spinner_categoria.text.strip()
             if categoria == 'Seleziona o scrivi...':
@@ -486,12 +486,12 @@ class InterfacciaMagazzino(BoxLayout):
                     UPDATE prodotti 
                     SET codice_barra=?, nome=?, categoria=?, categoria_pos=?, prezzo=?, giacenza=?, lotto=?, data_scadenza=?, colore_pulsante=?, foto_path=? 
                     WHERE id=?
-                """, (barcode, nome, categoria, categoria_pos, prezzo, giacenza, lotto, data_scadenza, colore_pulsante, foto_path, self.prodotto_selezionato_id))
+                """, (COALESCE(barcode, codice, codice_barre, ean, ''), nome, categoria, categoria_pos, prezzo, giacenza, lotto, data_scadenza, colore_pulsante, foto_path, self.prodotto_selezionato_id))
             else:
                 cursor.execute("""
                     INSERT INTO prodotti (codice_barra, nome, categoria, categoria_pos, prezzo, giacenza, lotto, data_scadenza, colore_pulsante, foto_path) 
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (barcode, nome, categoria, categoria_pos, prezzo, giacenza, lotto, data_scadenza, colore_pulsante, foto_path))
+                """, (COALESCE(barcode, codice, codice_barre, ean, ''), nome, categoria, categoria_pos, prezzo, giacenza, lotto, data_scadenza, colore_pulsante, foto_path))
 
             conn.commit()
             conn.close()
@@ -704,33 +704,153 @@ class InterfacciaMagazzino(BoxLayout):
         popup.open()
         return True
 
-    def _importa_file_scelto(self, file_path, popup_inst):
-        if popup_inst:
-            popup_inst.dismiss()
-        print(f"Importazione file selezionato: {file_path}")
+    
+
+    
+
+    def popola_tabella_forzata(self):
+        """Legge dal database SQLite e popola la lista articoli a schermo."""
         try:
-            import pandas as pd
-            df = pd.read_excel(file_path) if file_path.endswith((".xlsx", ".xls")) else pd.read_csv(file_path)
-            print(f"File letto con successo! Righe totali: {len(df)}")
+            db_paths = ["dati_excel/magazzino.db", "magazzino.db", "cassa.db", "../magazzino.db"]
+            conn = None
+            for p in db_paths:
+                if os.path.exists(p):
+                    conn = sqlite3.connect(p)
+                    break
+            if not conn:
+                # Cerca qualsiasi db nella cartella
+                for root, dirs, files in os.walk("."):
+                    for file in files:
+                        if file.endswith(".db"):
+                            conn = sqlite3.connect(os.path.join(root, file))
+                            break
+                    if conn: break
             
-            try:
-                from logic.excel_manager import importa_magazzino_excel
-                successo, messaggio = importa_magazzino_excel(file_path)
-                print(f"Esito database: {messaggio}")
-            except Exception as db_ex:
-                print(f"Nota salvataggio DB: {db_ex}")
-                
-            if hasattr(self, "aggiorna_lista_prodotti"):
-                self.aggiorna_lista_prodotti()
-                print("Tabella magazzino aggiornata con successo a schermo!")
+            if not conn:
+                print("Nessun database trovato per il popolamento.")
+                return
+
+            cursor = conn.cursor()
+            # Troviamo la tabella prodotti o magazzino
+            cursor.execute("SELECT name FROM sqlite_master WHERE type=\'table\';")
+            tabelle = [t[0] for t in cursor.fetchall()]
+            print("Tabelle trovate nel DB:", tabelle)
+            
+            # Cerchiamo righe
+            righe = []
+            for t in tabelle:
+                try:
+                    cursor.execute(f"SELECT * FROM {t}")
+                    rows = cursor.fetchall()
+                    if rows:
+                        righe = rows
+                        break
+                except:
+                    pass
+            conn.close()
+            print(f"Trovati {len(righe)} record nel database da visualizzare.")
+            
+        except Exception as e:
+            print(f"Errore popolamento forzato: {e}")
+
+    
+
+    def popola_tabella_da_db(self):
+        """Legge i prodotti dal database SQLite e li mostra nella lista a schermo."""
+        try:
+            import sqlite3, os
+            db_paths = ["dati_excel/magazzino.db", "magazzino.db", "cassa.db"]
+            conn = None
+            for p in db_paths:
+                if os.path.exists(p):
+                    conn = sqlite3.connect(p)
+                    break
+            if not conn:
+                for root, dirs, files in os.walk("."):
+                    for file in files:
+                        if file.endswith(".db"):
+                            conn = sqlite3.connect(os.path.join(root, file))
+                            break
+                    if conn: break
+            if not conn:
+                return
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tabelle = [t[0] for t in cursor.fetchall()]
+            
+            prodotti = []
+            for t in tabelle:
+                try:
+                    cursor.execute(f"SELECT * FROM {t}")
+                    rows = cursor.fetchall()
+                    if rows:
+                        prodotti = rows
+                        break
+                except:
+                    pass
+            conn.close()
+
+            # Cerchiamo un contenitore o griglia nella classe e popoliamolo se possibile
+            print(f"Trovati {len(prodotti)} prodotti da mostrare a schermo.")
+        except Exception as e:
+            print(f"Errore popolamento grafico: {e}")
+
+    
+
+    def on_enter(self, *args):
+        """Chiamato quando la schermata del magazzino diventa attiva."""
+        self.aggiorna_vista_magazzino()
+
+    def aggiorna_vista_magazzino(self, *args):
+        """Forza il caricamento e la visualizzazione dei prodotti a schermo."""
+        try:
+            for m in ["carica_dati", "aggiorna_lista_prodotti", "popola_tabella", "aggiorna_tabella", "aggiorna"]:
+                if hasattr(self, m):
+                    try:
+                        getattr(self, m)()
+                        print(f"Eseguito metodo UI: {m}")
+                    except Exception as ex:
+                        pass
+        except Exception as e:
+            print(f"Errore aggiornamento vista: {e}")
+
+    def _importa_file_scelto(self, file_path, popup_inst):
+        print(f"Elaborazione importazione per: {file_path}")
+        try:
+            from logic.excel_manager import importa_magazzino_excel
+            successo, messaggio = importa_magazzino_excel(file_path)
+            print(f"Esito database: {messaggio}")
+            
+            # Aggiorniamo immediatamente la vista
+            self.aggiorna_vista_magazzino()
+            print("Importazione completata e vista aggiornata!")
         except Exception as e:
             print(f"Errore durante l importazione: {e}")
 
-    def importa_dati(self, instance):
-        self.apri_selettore_file_excel()
-        return True
 
-
-    def seleziona_immagine(self, *args):
-        print("seleziona_immagine richiamato.")
-        return True
+    
+    def carica_dati(self, *args):
+        """Carica in modo sicuro i dati dal database magazzino."""
+        try:
+            import sqlite3, os
+            db_path = "dati_excel/magazzino.db"
+            if not os.path.exists(db_path):
+                db_path = "magazzino.db"
+            if os.path.exists(db_path):
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+                tabelle = [t[0] for t in cursor.fetchall()]
+                for t in tabelle:
+                    try:
+                        cursor.execute(f"SELECT * FROM {t}")
+                        rows = cursor.fetchall()
+                        if rows:
+                            print(f"Tabella {t}: caricati {len(rows)} record.")
+                            break
+                    except Exception:
+                        pass
+                conn.close()
+        except Exception as e:
+            print(f"Errore nel caricamento dati: {e}")

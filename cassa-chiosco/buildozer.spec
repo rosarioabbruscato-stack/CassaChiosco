@@ -41,8 +41,8 @@ version = 0.3
 # version.filename = %(source.dir)s/main.py
 
 # (list) Application requirements
-# comma separated e.g. requirements = python3,kivy
-requirements = python3,kivy
+# comma separated e.g. requirements = python3,kivy,openpyxl
+requirements = python3,kivy,openpyxl
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
