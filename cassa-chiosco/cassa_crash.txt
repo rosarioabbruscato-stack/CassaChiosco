@@ -1,0 +1,18 @@
+Traceback (most recent call last):
+  File "/home/utente/CassaChiosco/cassa-chiosco/main.py", line 110, in <module>
+    CassaApp().run()
+  File "/home/utente/.local/lib/python3.11/site-packages/kivy/app.py", line 955, in run
+    self._run_prepare()
+  File "/home/utente/.local/lib/python3.11/site-packages/kivy/app.py", line 925, in _run_prepare
+    root = self.build()
+           ^^^^^^^^^^^^
+  File "/home/utente/CassaChiosco/cassa-chiosco/main.py", line 39, in build
+    self.mostra_schermata("vendita")
+  File "/home/utente/CassaChiosco/cassa-chiosco/main.py", line 64, in mostra_schermata
+    self.content_container.add_widget(InterfacciaCassa.crea_schermata_vendita(self))
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/utente/CassaChiosco/cassa-chiosco/ui/ui_cassa.py", line 168, in crea_schermata_vendita
+    popola_reparti_db()
+  File "/home/utente/CassaChiosco/cassa-chiosco/ui/ui_cassa.py", line 148, in popola_reparti_db
+    cursor.execute('SELECT id, nome, attivo, standby, colore_r, col_t FROM config_reparti')
+sqlite3.OperationalError: no such column: col_t

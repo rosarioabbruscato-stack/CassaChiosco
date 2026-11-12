@@ -1,0 +1,26 @@
+[INFO   ] Logger: Record log in /home/utente/CassaChiosco/cassa-chiosco/.kivy/logs/kivy_26-10-04_1.txt
+[WARNING] Kivy: KIVY_DESKTOP_PATH_ID not set. If your application targets desktop platforms, set it to provide a user-friendly application name for directories. See https://kivy.org/doc/stable/guide/environment.html
+[INFO   ] Kivy: v3.0.0.dev0
+[INFO   ] Kivy: Installed at "/tmp/pip-install-cucls6ld/kivy_3953350954244bbdba85330fe8a78b86/kivy/__init__.py"
+[INFO   ] Python: v3.11.16 (main, Aug 13 2026, 09:46:36) [GCC 15.2.0]
+[INFO   ] Python: Interpreter at "/home/utente/CassaChiosco/cassa-chiosco/venv/bin/python3"
+[INFO   ] Logger: Purge log fired. Processing...
+[INFO   ] Logger: Purge finished!
+[INFO   ] creating /tmp/tmpxti9j3vx/build/tmp/tmpxti9j3vx
+[INFO   ] x86_64-linux-gnu-gcc -Wsign-compare -DNDEBUG -g -fwrapv -O2 -Wall -g -Werror=implicit-function-declaration -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -fstack-protector-strong -fstack-clash-protection -Wformat -Werror=format-security -fcf-protection -g -fwrapv -O2 -fPIC -I/home/utente/CassaChiosco/cassa-chiosco/venv/include -I/usr/include/python3.11 -c /tmp/tmpxti9j3vx/test.c -o /tmp/tmpxti9j3vx/build/tmp/tmpxti9j3vx/test.o
+[INFO   ] running dist_info
+[INFO   ] creating /tmp/pip-modern-metadata-d6s_86zh/Kivy.egg-info
+[INFO   ] writing /tmp/pip-modern-metadata-d6s_86zh/Kivy.egg-info/PKG-INFO
+[INFO   ] writing dependency_links to /tmp/pip-modern-metadata-d6s_86zh/Kivy.egg-info/dependency_links.txt
+[INFO   ] writing requirements to /tmp/pip-modern-metadata-d6s_86zh/Kivy.egg-info/requires.txt
+[INFO   ] writing top-level names to /tmp/pip-modern-metadata-d6s_86zh/Kivy.egg-info/top_level.txt
+[INFO   ] writing manifest file '/tmp/pip-modern-metadata-d6s_86zh/Kivy.egg-info/SOURCES.txt'
+[INFO   ] reading manifest file '/tmp/pip-modern-metadata-d6s_86zh/Kivy.egg-info/SOURCES.txt'
+[INFO   ] reading manifest template 'MANIFEST.in'
+[WARNING] warning: no files found matching '*.txt' under directory 'kivy/tools'
+[WARNING] warning: no files found matching '*.bat' under directory 'kivy/tools'
+[WARNING] warning: no files found matching '*.pyd' under directory 'kivy'
+[WARNING] warning: no files found matching '*.m' under directory 'kivy'
+[INFO   ] adding license file 'LICENSE'
+[INFO   ] writing manifest file '/tmp/pip-modern-metadata-d6s_86zh/Kivy.egg-info/SOURCES.txt'
+[INFO   ] creating '/tmp/pip-modern-metadata-d6s_86zh/kivy-3.0.0.dev0.dist-info'

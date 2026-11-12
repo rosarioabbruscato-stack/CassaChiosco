@@ -1,0 +1,30 @@
+[INFO   ] Logger: Record log in /home/utente/CassaChiosco/cassa-chiosco/.kivy/logs/kivy_26-10-04_3.txt
+[WARNING] Kivy: KIVY_DESKTOP_PATH_ID not set. If your application targets desktop platforms, set it to provide a user-friendly application name for directories. See https://kivy.org/doc/stable/guide/environment.html
+[INFO   ] Kivy: v3.0.0.dev0
+[INFO   ] Kivy: Installed at "/home/utente/CassaChiosco/cassa-chiosco/venv/lib/python3.11/site-packages/kivy/__init__.py"
+[INFO   ] Python: v3.11.16 (main, Aug 13 2026, 09:46:36) [GCC 15.2.0]
+[INFO   ] Python: Interpreter at "/home/utente/CassaChiosco/cassa-chiosco/venv/bin/python3"
+[INFO   ] Logger: Purge log fired. Processing...
+[INFO   ] Logger: Purge finished!
+[INFO   ] Factory: 199 symbols loaded
+[INFO   ] Image: Providers: img_tex, img_dds, img_pil, img_thorvg_svg (img_ffpyplayer ignored)
+[INFO   ] Text: Providers: text_pil 
+[CRITICAL] Window: Unable to find any valuable Window provider. Please enable debug logging (e.g. add -d if running from the command line, or change the log level in the config) and re-run your app to identify potential causes
+x11 - ModuleNotFoundError: No module named 'kivy.core.window.window_x11'
+  File "/home/utente/CassaChiosco/cassa-chiosco/venv/lib/python3.11/site-packages/kivy/core/__init__.py", line 305, in core_select_lib
+    mod = importlib.__import__(name='{2}.{0}.{1}'.format(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1283, in __import__
+  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1140, in _find_and_load_unlocked
+
+[WARNING] stderr: Traceback (most recent call last):
+[WARNING] stderr:   File "/home/utente/CassaChiosco/cassa-chiosco/main.py", line 12, in <module>
+[WARNING] stderr:     from ui.ui_cassa import InterfacciaCassa
+[WARNING] stderr:   File "/home/utente/CassaChiosco/cassa-chiosco/ui/ui_cassa.py", line 8, in <module>
+[WARNING] stderr:     from ui.ui_styles import CustomButton, COLORI_REPARTI
+[WARNING] stderr:   File "/home/utente/CassaChiosco/cassa-chiosco/ui/ui_styles.py", line 5, in <module>
+[WARNING] stderr:     Window.clearcolor = (0.95, 0.95, 0.97, 1)
+[WARNING] stderr:     ^^^^^^^^^^^^^^^^^
+[WARNING] stderr: AttributeError: 'NoneType' object has no attribute 'clearcolor'
